@@ -4,21 +4,11 @@ import logging
 import smtplib
 
 app = Flask(__name__)
-URL = "http://www.danielrichman.co.uk/cusf-notam-info/{0}"
 lang = {}
 
-_format_string = \
-    "[%(asctime)s] %(levelname)s %(name)s: %(message)s"
-
-log_file = open("/opt/cusf-notam-twilio/notam.log", mode="a",
-                buffering=1) # line buffering
-handler = logging.StreamHandler(log_file)
-handler.setLevel(logging.DEBUG)
-handler.setFormatter(logging.Formatter(_format_string))
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.DEBUG)
-root_logger.addHandler(handler)
 logger = logging.getLogger("notam")
+
+_url = lambda path: app.config["URL"].format(path)
 
 def call_log(message):
     sid = request.form["CallSid"]
@@ -106,6 +96,3 @@ def call_ended():
 @app.route("/heartbeat")
 def heartbeat():
     return "FastCGI is alive"
-
-if __name__ == '__main__':
-    app.run(debug=True)

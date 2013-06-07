@@ -1,4 +1,5 @@
 *.pyc
 *.swp
-notam.log
+notam.fcgi
+notam.debug
 venv

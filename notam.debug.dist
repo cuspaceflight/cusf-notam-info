@@ -1,0 +1,17 @@
+#!/opt/cusf-notam-twilio/venv/bin/python
+
+import logging
+from notam import app
+
+handler = logging.StreamHandler(log_file)
+handler.setLevel(logging.DEBUG)
+handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.DEBUG)
+root_logger.addHandler(handler)
+
+app.config['URL'] = "http://localhost:5000/{0}"
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)
