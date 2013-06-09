@@ -1,21 +1,41 @@
 #!/opt/cusf-notam-twilio/venv/bin/python
 
 import logging
-from logging.handlers import SysLogHandler
+from logging.handlers import SysLogHandler, SMTPHandler
 from flup.server.fcgi import WSGIServer
 from notam import app
 
+app.config['POSTGRES'] = "dbname=cusf-notam-twilio"
+app.config['EMAIL_TO'] = ["main@danielrichman.co.uk"]
+app.config['EMAIL_FROM'] = "cusf-notam-twilio@yocto.danielrichman.co.uk"
+app.config['EMAIL_SERVER'] = "localhost"
+
 _format_string = "cusf-notam-twilio: %(name)s %(levelname)s %(message)s"
-handler = SysLogHandler(facility=SysLogHandler.LOG_LOCAL5, address="/dev/log")
-handler = logging.StreamHandler(log_file)
-handler.setLevel(logging.DEBUG)
-handler.setFormatter(logging.Formatter(_format_string))
+syslog_handler = SysLogHandler(facility=SysLogHandler.LOG_LOCAL5,
+                               address="/dev/log")
+syslog_handler.setLevel(logging.DEBUG)
+syslog_handler.setFormatter(logging.Formatter(_format_string))
+
+_format_email = \
+"""%(levelname)s from logger %(name)s
+
+Time:       %(asctime)s
+Location:   %(pathname)s:%(lineno)d
+Module:     %(module)s
+Function:   %(funcName)s
+
+%(message)s"""
+mail_handler = SMTPHandler(app.config['EMAIL_SERVER'],
+                           app.config['EMAIL_FROM'],
+                           app.config['EMAIL_TO'],
+                           "cusf-notam-twilio error logger")
+mail_handler.setLevel(logging.ERROR)
+mail_handler.setFormatter(logging.Formatter(_format_email))
 
 root_logger = logging.getLogger()
 root_logger.setLevel(logging.DEBUG)
-root_logger.addHandler(handler)
-
-app.config['URL'] = "http://www.danielrichman.co.uk/cusf-notam-info/{0}"
+root_logger.addHandler(syslog_handler)
+root_logger.addHandler(mail_handler)
 
 if __name__ == "__main__":
     WSGIServer(app).run()
