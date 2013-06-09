@@ -2,11 +2,24 @@ from flask import Flask, request
 from twilio import twiml
 import logging
 import smtplib
+import time
 
 app = Flask(__name__)
 lang = {}
 
 logger = logging.getLogger("notam")
+call_logger = logging.getLogger("notam.call")
+
+class CallLogHandler(logging.Handler):
+    def emit(self, record):
+        msg = self.format(record).encode('ascii', 'replace')
+        sid = request.form["CallSid"]
+        query = "INSERT INTO call_log (call, time, message) " \
+                "VALUES (%s, %s, %s)"
+        data = (sid, int(time.time()), msg)
+        cur.execute(query, data)
+        cur.commit()
+        # TODO: reconnection?
 
 _url = lambda path: app.config["URL"].format(path)
 
