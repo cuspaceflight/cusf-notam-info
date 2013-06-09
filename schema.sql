@@ -24,11 +24,19 @@ CREATE TABLE messages (
     -- if audio is not null, text is its description or transcription
     text VARCHAR(500) NOT NULL CHECK (text != ''),
     audio BYTEA DEFAULT NULL,
+    active_when TSRANGE DEFAULT NULL,
     is_default BOOLEAN DEFAULT FALSE,
-    active_until BIGINT DEFAULT NULL,
 
-    PRIMARY KEY (id)
+    PRIMARY KEY (id),
+    CONSTRAINT default_xor_tsrange
+        CHECK (is_default == (active_when == NULL)),
+    CONSTRAINT one_default
+        EXCLUDE (is_default WITH ==) WHERE (is_default == TRUE),
+    CONSTRAINT overlapping_range
+        EXCLUDE USING gist (active_when WITH &&) WHERE (is_default == FALSE)
 );
+
+CREATE INDEX messages_active_index ON messages USING gist (active);
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON call_log TO "www-data";
 GRANT SELECT, UPDATE ON call_log_id_seq TO "www-data";
