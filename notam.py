@@ -122,13 +122,26 @@ def sms():
 @app.route('/call/start', methods=["POST"])
 def call_start():
     call_log("Call started; from {0}".format(request.form["From"]))
-    call_log("Saying 'no launches in the next three days' "
-             "and offering options")
 
     r = twiml.Response()
-    r.say("This is the Cambridge University Space Flight notam information "
-            "phone number.")
-    r.say("There are no launches in the next three days")
+    # This is the information phone number for the Cambridge University
+    # Spaceflight NOTAM.
+    r.play(url_for('static', filename='audio/greeting.wav'))
+    r.pause(length=1)
+
+    if True:
+        call_log("Default: saying 'no launches in the next three days' "
+                 "and offering options")
+        # We are not planning any launches in the next three days.
+        r.play(url_for('static', filename='audio/none_three_days.wav'))
+    else:
+        call_log("Saying 'TODO'")
+        # You will shortly hear an automated message detailing the
+        # approximate time of an upcoming launch that we are planning.
+        r.play(url_for('static', filename='audio/robot_intro.wav'))
+        r.pause(length=1)
+        r.say("TODO")
+
     r.pause(length=1)
     options(r)
 
@@ -136,8 +149,10 @@ def call_start():
 
 def options(r):
     g = r.gather(action=url_for("call_gathered"), timeout=30, numDigits=1)
-    g.say("Press 2 to be connected to a human; otherwise "
-        "please either hang up or press 1 to end the call")
+    # Hopefully this automated message has answered your question, but if not,
+    # please press 2 to be forwarded to a human. Otherwise, either hang up or
+    # press 1 to end the call.
+    g.play(url_for('static', filename='audio/options.wav'))
     r.redirect(url_for('call_gather_timeout'))
 
 @app.route('/call/gathered', methods=["POST"])
@@ -148,9 +163,11 @@ def call_gathered():
         call_log("Hanging up (pressed 1)")
     elif d == "2":
         call_log("Forwarding call (pressed 2)")
-        r.say("Please hold. In the event that the first member called is in "
-              "a lecture or otherwise busy, another will be automatically "
-              "called, which could take a minute or two")
+        # Forwarding. In the event that the first society member contacted is
+        # in a lecture or otherwise unavailable, a second member will be
+        # phoned. This could take a minute or two.
+        r.play(url_for('static', filename='audio/forwarding.wav'))
+        r.pause(length=1)
         r.redirect(url_for('call_human', index=0))
     else:
         call_log("Invalid keypress {0}; offering options".format(d))
@@ -219,8 +236,10 @@ def call_human_ended(index):
             _dial(r, index + 1)
         except IndexError:
             call_log("Humans exhausted: apologising and hanging up")
-            r.say("Unfortunately we failed to contact any members. "
-                  "Please try the alternative phone number on the notam.")
+            # Unfortunately we failed to contact any members.
+            # Please try the alternative phone number on the NOTAM
+            r.play(url_for('static', filename='audio/humans_fail.wav'))
+            r.pause(length=1)
             r.hangup()
 
     return str(r)
