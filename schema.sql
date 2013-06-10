@@ -1,3 +1,9 @@
+\set ON_ERROR_STOP
+
+DROP TABLE IF EXISTS call_log;
+DROP TABLE IF EXISTS humans;
+DROP TABLE IF EXISTS messages;
+
 CREATE TABLE call_log (
     id SERIAL,
     call VARCHAR(120) NOT NULL CHECK (call != ''),
@@ -8,22 +14,26 @@ CREATE TABLE call_log (
 );
 
 CREATE INDEX call_log_index ON call_log (call, time, id);
--- SELECT message FROM call_log WHERE call = %s ORDER BY time ASC, id ASC;
+-- for query:
+--   SELECT message FROM call_log WHERE call = %s ORDER BY time ASC, id ASC;
 
 CREATE TABLE humans (
     id SERIAL,
-    name VARCHAR(50) NOT NULL CHECK (name != ''),
-    phone VARCHAR(25) NOT NULL CHECK (phone ~ '^\+[0-9]+$'),
-    priority SMALLINT NOT NULL,
+    name VARCHAR(50) NOT NULL UNIQUE CHECK (name != ''),
+    phone VARCHAR(25) NOT NULL UNIQUE CHECK (phone ~ '^\+[0-9]+$'),
+    -- priority == 0: disabled; otherwise lowest is first.
+    priority SMALLINT NOT NULL CHECK (priority >= 0),
 
-    PRIMARY KEY (id)
+    PRIMARY KEY (id),
+    CONSTRAINT unique_priorities
+        EXCLUDE (priority WITH =) WHERE (priority != 0)
 );
+
+CREATE INDEX humans_priority_index ON humans (priority) WHERE priority > 0;
 
 CREATE TABLE messages (
     id SERIAL,
-    -- if audio is not null, text is its description or transcription
     text VARCHAR(500) NOT NULL CHECK (text != ''),
-    audio BYTEA DEFAULT NULL,
     active_when TSRANGE DEFAULT NULL,
     is_default BOOLEAN DEFAULT FALSE,
 
@@ -44,3 +54,6 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON humans TO "www-data";
 GRANT SELECT, UPDATE ON humans_id_seq TO "www-data";
 GRANT SELECT, INSERT, UPDATE, DELETE ON messages TO "www-data";
 GRANT SELECT, UPDATE ON messages_id_seq TO "www-data";
+
+INSERT INTO humans (name, phone, priority) VALUES
+    ('Daniel Richman', '+447913430431', 1);

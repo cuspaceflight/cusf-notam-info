@@ -107,13 +107,6 @@ def email(subject, message):
 
 basic_phone_re = re.compile('^\\+[0-9]+$')
 
-# TODO hack
-#@app.before_request
-def hack_POST_stuff():
-    from werkzeug.datastructures import MultiDict
-    request.form = MultiDict(request.form)
-    request.form.update(request.args)
-
 
 ## Views
 
@@ -171,10 +164,18 @@ def call_gather_timeout():
     r.hangup()
     return str(r)
 
-humans = ["+447913430431", "+447913430431", "+447913430431"]
-
 def _dial(r, index):
-    call_log("Dialing human {0} on {1}".format(index, humans[index]))
+    query = "SELECT name, phone FROM humans " \
+            "WHERE priority > 0 ORDER BY priority ASC " \
+            "LIMIT 1 OFFSET %s"
+
+    with cursor() as cur:
+        cur.execute(query, (index, ))
+        if cur.rowcount != 1:
+            raise IndexError("No more humans")
+        name, phone = cur.fetchone()
+
+    call_log("Dialing human {0} {1!r} on {2}".format(index, name, phone))
 
     # Make callerId be our Twilio number so people know why they're being
     # called at 7am before they pick up
@@ -182,7 +183,7 @@ def _dial(r, index):
                          parent_sid=get_sid())
     d = r.dial(action=url_for("call_human_ended", index=index), 
                callerId=request.form["To"])
-    d.number(humans[index], url=pickup_url)
+    d.number(phone, url=pickup_url)
 
 @app.route('/call/human/<int:index>', methods=["POST"])
 def call_human(index):
@@ -214,14 +215,13 @@ def call_human_ended(index):
         call_log("Dialing human {0} failed: {1}"
                     .format(index, status))
 
-        index += 1
-        if index == len(humans):
+        try:
+            _dial(r, index + 1)
+        except IndexError:
             call_log("Humans exhausted: apologising and hanging up")
-            r.say("Failed to contact any members; apologies. "
+            r.say("Unfortunately we failed to contact any members. "
                   "Please try the alternative phone number on the notam.")
             r.hangup()
-        else:
-            _dial(r, index)
 
     return str(r)
 
