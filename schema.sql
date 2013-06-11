@@ -24,12 +24,8 @@ CREATE TABLE humans (
     -- priority == 0: disabled; otherwise lowest is first.
     priority SMALLINT NOT NULL CHECK (priority >= 0),
 
-    PRIMARY KEY (id),
-    CONSTRAINT unique_priorities
-        EXCLUDE (priority WITH =) WHERE (priority != 0)
+    PRIMARY KEY (id)
 );
-
-CREATE INDEX humans_priority_index ON humans (priority) WHERE priority > 0;
 
 CREATE TABLE messages (
     id SERIAL,

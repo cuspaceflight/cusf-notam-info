@@ -4,6 +4,7 @@ import logging
 import smtplib
 import time
 import re
+import random
 from psycopg2.pool import ThreadedConnectionPool
 
 from flask import request, url_for
@@ -129,18 +130,21 @@ def call_start():
     r.play(url_for('static', filename='audio/greeting.wav'))
     r.pause(length=1)
 
-    if True:
+    if False:
         call_log("Default: saying 'no launches in the next three days' "
                  "and offering options")
         # We are not planning any launches in the next three days.
         r.play(url_for('static', filename='audio/none_three_days.wav'))
     else:
-        call_log("Saying 'TODO'")
+        message = "There will be a launch on Saturday the 8th " \
+                  "between 8am and 3pm"
+
+        call_log("Introducing robot and saying {0!r}".format(message))
         # You will shortly hear an automated message detailing the
         # approximate time of an upcoming launch that we are planning.
         r.play(url_for('static', filename='audio/robot_intro.wav'))
         r.pause(length=1)
-        r.say("TODO")
+        r.say(message)
 
     r.pause(length=1)
     options(r)
@@ -153,7 +157,7 @@ def options(r):
     # please press 2 to be forwarded to a human. Otherwise, either hang up or
     # press 1 to end the call.
     g.play(url_for('static', filename='audio/options.wav'))
-    r.redirect(url_for('call_gather_timeout'))
+    r.redirect(url_for('call_gather_failed'))
 
 @app.route('/call/gathered', methods=["POST"])
 def call_gathered():
@@ -162,78 +166,86 @@ def call_gathered():
     if d == "1":
         call_log("Hanging up (pressed 1)")
     elif d == "2":
-        call_log("Forwarding call (pressed 2)")
+        seed = random.getrandbits(32)
+        call_log("Forwarding call (pressed 2); seed {0!r}".format(seed))
         # Forwarding. In the event that the first society member contacted is
         # in a lecture or otherwise unavailable, a second member will be
         # phoned. This could take a minute or two.
         r.play(url_for('static', filename='audio/forwarding.wav'))
         r.pause(length=1)
-        r.redirect(url_for('call_human', index=0))
+        r.redirect(url_for('call_human', seed=seed, index=0))
     else:
         call_log("Invalid keypress {0}; offering options".format(d))
         options(r)
     return str(r)
 
-@app.route('/call/gather_timeout', methods=["POST"])
-def call_gather_timeout():
-    call_log("Timeout: no keys pressed out")
+@app.route('/call/gather_failed', methods=["POST"])
+def call_gather_faield():
+    call_log("Gather failed - no keys pressed; hanging up")
     r = twiml.Response()
     r.hangup()
     return str(r)
 
-def _dial(r, index):
-    query = "SELECT name, phone FROM humans " \
-            "WHERE priority > 0 ORDER BY priority ASC " \
-            "LIMIT 1 OFFSET %s"
+def _humans(seed):
+    query = "SELECT priority, name, phone FROM humans " \
+            "WHERE priority > 0"
 
     with cursor() as cur:
-        cur.execute(query, (index, ))
-        if cur.rowcount != 1:
-            raise IndexError("No more humans")
-        name, phone = cur.fetchone()
+        cur.execute(query)
+        humans = cur.fetchall()
 
-    call_log("Dialing human {0} {1!r} on {2}".format(index, name, phone))
+    rng = random.Random(seed)
+    humans = [(priority + rng.uniform(0.1, 0.2), name, phone)
+              for (priority, name, phone) in humans]
+    humans.sort()
+
+    return humans
+
+def _dial(r, seed, index):
+    priority, name, phone = _humans()[index]
+
+    call_log("Attempt {0}: {1!r} on {2}".format(index, name, phone))
 
     # Make callerId be our Twilio number so people know why they're being
     # called at 7am before they pick up
-    pickup_url = url_for("call_human_pickup", index=index, 
+    pickup_url = url_for("call_human_pickup", seed=seed, index=index, 
                          parent_sid=get_sid())
-    d = r.dial(action=url_for("call_human_ended", index=index), 
+    d = r.dial(action=url_for("call_human_ended", seed=seed, index=index),
                callerId=request.form["To"])
     d.number(phone, url=pickup_url)
 
-@app.route('/call/human/<int:index>', methods=["POST"])
-def call_human(index):
+@app.route('/call/human/<int:seed>/<int:index>', methods=["POST"])
+def call_human(seed, index):
     r = twiml.Response()
-    _dial(r, index)
+    _dial(r, seed, index)
     return str(r)
 
-@app.route("/call/human/<int:index>/pickup", methods=["POST"])
-def call_human_pickup(index):
+@app.route("/call/human/<int:seed>/<int:index>/pickup", methods=["POST"])
+def call_human_pickup(seed, index):
     # This URL is hit before the called party is connected to the call
     # Just use it for logging
-    call_log("Human {0} picked up".format(index))
+    call_log("Human (attempt {0}) picked up".format(index))
     r = twiml.Response()
     return str(r)
 
-@app.route("/call/human/<int:index>/end", methods=["POST"])
-def call_human_ended(index):
+@app.route("/call/human/<int:seed>/<int:index>/end", methods=["POST"])
+def call_human_ended(seed, index):
     # This URL is hit when the Dial verb finishes
 
     status = request.form["DialCallStatus"]
     r = twiml.Response()
 
     if status == "completed":
-        call_log("Dial (human {0}) completed successfully; hanging up"
+        call_log("Dial (attempt {0}) completed successfully; hanging up"
                     .format(index))
         r.hangup()
 
     else:
-        call_log("Dialing human {0} failed: {1}"
+        call_log("Dialing human (attempt {0}) failed: {1}"
                     .format(index, status))
 
         try:
-            _dial(r, index + 1)
+            _dial(r, seed, index + 1)
         except IndexError:
             call_log("Humans exhausted: apologising and hanging up")
             # Unfortunately we failed to contact any members.
