@@ -29,17 +29,18 @@ CREATE TABLE humans (
 
 CREATE TABLE messages (
     id SERIAL,
-    text VARCHAR(500) NOT NULL CHECK (text != ''),
+    web_text VARCHAR(500) NOT NULL CHECK (web_text != ''),
+    call_text VARCHAR(500) NOT NULL CHECK (call_text != ''),
     active_when TSRANGE DEFAULT NULL,
-    is_default BOOLEAN DEFAULT FALSE,
 
     PRIMARY KEY (id),
-    CONSTRAINT default_xor_tsrange
-        CHECK (is_default = (active_when IS NULL)),
-    CONSTRAINT one_default
-        EXCLUDE (is_default WITH =) WHERE (is_default = TRUE),
-    CONSTRAINT overlapping_range
-        EXCLUDE USING gist (active_when WITH &&) WHERE (is_default = FALSE)
+    CONSTRAINT overlapping_range EXCLUDE USING gist (active_when WITH &&),
+    CONSTRAINT active_when_finite
+        CHECK (LOWER_INF(active_when) = FALSE AND
+               UPPER_INF(active_when) = FALSE),
+    CONSTRAINT active_when_clopen
+        CHECK (LOWER_INC(active_when) = TRUE AND
+               UPPER_INC(active_when) = FALSE)
 );
 
 CREATE INDEX messages_active_index ON messages USING gist (active_when);

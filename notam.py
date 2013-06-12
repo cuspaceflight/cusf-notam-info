@@ -74,7 +74,7 @@ def call_log(message):
 
     db_msg = message.encode('ascii', 'replace')
     query = "INSERT INTO call_log (call, time, message) " \
-            "VALUES (%s, NOW(), %s)"
+            "VALUES (%s, LOCALTIMESTAMP, %s)"
 
     with cursor() as cur:
         cur.execute(query, (sid, db_msg))
@@ -103,6 +103,34 @@ def email(subject, message):
     server.sendmail(app.config['EMAIL_FROM'], app.config['EMAIL_TO'], email)
     server.quit()
 
+def humans(seed):
+    query = "SELECT priority, name, phone FROM humans " \
+            "WHERE priority > 0"
+
+    with cursor() as cur:
+        cur.execute(query)
+        humans = cur.fetchall()
+
+    rng = random.Random(seed)
+    humans = [(priority + rng.uniform(0.1, 0.2), name, phone)
+              for (priority, name, phone) in humans]
+    humans.sort()
+
+    return humans
+
+def message():
+    # returns web_text, call_text
+    query = "SELECT web_text, call_text FROM messages " \
+            "WHERE LOCALTIMESTAMP <@ active_when"
+
+    with cursor() as cur:
+        cur.execute(query)
+        if cur.rowcount == 1:
+            return cur.fetchone()
+        elif cur.rowcount == 0:
+            return None, None
+        else:
+            assert False, "cur.rowcount in [0, 1]"
 
 ## Misc
 
@@ -110,6 +138,20 @@ basic_phone_re = re.compile('^\\+[0-9]+$')
 
 
 ## Views
+
+@app.route("/heartbeat")
+def heartbeat():
+    with cursor() as cur:
+        cur.execute("SELECT TRUE")
+        assert cur.fetchone()
+    return "FastCGI is alive and PostgreSQL is OK"
+
+@app.route('/web')
+def web_status():
+    web_text, call_text = message()
+    if web_text is None:
+        web_text = "No upcoming launches in the next three days"
+    return web_text
 
 @app.route('/sms', methods=["POST"])
 def sms():
@@ -130,21 +172,20 @@ def call_start():
     r.play(url_for('static', filename='audio/greeting.wav'))
     r.pause(length=1)
 
-    if False:
-        call_log("Default: saying 'no launches in the next three days' "
+    web_text, call_text = message()
+
+    if call_text is None:
+        call_log("Saying 'no launches in the next three days' "
                  "and offering options")
         # We are not planning any launches in the next three days.
         r.play(url_for('static', filename='audio/none_three_days.wav'))
     else:
-        message = "There will be a launch on Saturday the 8th " \
-                  "between 8am and 3pm"
-
         call_log("Introducing robot and saying {0!r}".format(message))
         # You will shortly hear an automated message detailing the
         # approximate time of an upcoming launch that we are planning.
         r.play(url_for('static', filename='audio/robot_intro.wav'))
         r.pause(length=1)
-        r.say(message)
+        r.say(call_text)
 
     r.pause(length=1)
     options(r)
@@ -180,29 +221,14 @@ def call_gathered():
     return str(r)
 
 @app.route('/call/gather_failed', methods=["POST"])
-def call_gather_faield():
+def call_gather_failed():
     call_log("Gather failed - no keys pressed; hanging up")
     r = twiml.Response()
     r.hangup()
     return str(r)
 
-def _humans(seed):
-    query = "SELECT priority, name, phone FROM humans " \
-            "WHERE priority > 0"
-
-    with cursor() as cur:
-        cur.execute(query)
-        humans = cur.fetchall()
-
-    rng = random.Random(seed)
-    humans = [(priority + rng.uniform(0.1, 0.2), name, phone)
-              for (priority, name, phone) in humans]
-    humans.sort()
-
-    return humans
-
-def _dial(r, seed, index):
-    priority, name, phone = _humans()[index]
+def dial(r, seed, index):
+    priority, name, phone = humans()[index]
 
     call_log("Attempt {0}: {1!r} on {2}".format(index, name, phone))
 
@@ -217,7 +243,7 @@ def _dial(r, seed, index):
 @app.route('/call/human/<int:seed>/<int:index>', methods=["POST"])
 def call_human(seed, index):
     r = twiml.Response()
-    _dial(r, seed, index)
+    dial(r, seed, index)
     return str(r)
 
 @app.route("/call/human/<int:seed>/<int:index>/pickup", methods=["POST"])
@@ -245,7 +271,7 @@ def call_human_ended(seed, index):
                     .format(index, status))
 
         try:
-            _dial(r, seed, index + 1)
+            dial(r, seed, index + 1)
         except IndexError:
             call_log("Humans exhausted: apologising and hanging up")
             # Unfortunately we failed to contact any members.
@@ -270,10 +296,3 @@ def call_ended():
     email("Call from {0}".format(number), get_call_log())
 
     return "OK"
-
-@app.route("/heartbeat")
-def heartbeat():
-    with cursor() as cur:
-        cur.execute("SELECT TRUE")
-        assert cur.fetchone()
-    return "FastCGI is alive and PostgreSQL is OK"
