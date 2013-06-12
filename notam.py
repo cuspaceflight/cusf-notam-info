@@ -119,8 +119,8 @@ def humans(seed):
     return humans
 
 def message():
-    # returns web_text, call_text
-    query = "SELECT web_text, call_text FROM messages " \
+    # returns web_short_text, web_long_text, call_text
+    query = "SELECT web_short_text, web_long_text, call_text FROM messages " \
             "WHERE LOCALTIMESTAMP <@ active_when"
 
     with cursor() as cur:
@@ -128,7 +128,7 @@ def message():
         if cur.rowcount == 1:
             return cur.fetchone()
         elif cur.rowcount == 0:
-            return None, None
+            return None, None, None
         else:
             assert False, "cur.rowcount in [0, 1]"
 
@@ -146,12 +146,13 @@ def heartbeat():
         assert cur.fetchone()
     return "FastCGI is alive and PostgreSQL is OK"
 
-@app.route('/web')
+@app.route('/web.json')
 def web_status():
-    web_text, call_text = message()
-    if web_text is None:
-        web_text = "No upcoming launches in the next three days"
-    return web_text
+    web_short_text, web_long_text, _ = message()
+    if web_short_text is None:
+        web_short_text = "No upcoming launches in the next three days"
+        web_long_text = "No upcoming launches in the next three days"
+    return flask.jsonify(short=web_short_text, long=web_long_text)
 
 @app.route('/sms', methods=["POST"])
 def sms():
@@ -172,7 +173,7 @@ def call_start():
     r.play(url_for('static', filename='audio/greeting.wav'))
     r.pause(length=1)
 
-    web_text, call_text = message()
+    _, _, call_text = message()
 
     if call_text is None:
         call_log("Saying 'no launches in the next three days' "

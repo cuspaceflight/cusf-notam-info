@@ -29,7 +29,8 @@ CREATE TABLE humans (
 
 CREATE TABLE messages (
     id SERIAL,
-    web_text VARCHAR(500) NOT NULL CHECK (web_text != ''),
+    web_short_text VARCHAR(500) NOT NULL CHECK (web_short_text != ''),
+    web_long_text VARCHAR(2000) NOT NULL CHECK (web_long_text != ''),
     call_text VARCHAR(500) NOT NULL CHECK (call_text != ''),
     active_when TSRANGE DEFAULT NULL,
 
