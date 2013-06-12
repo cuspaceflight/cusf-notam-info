@@ -29,6 +29,7 @@ CREATE TABLE humans (
 
 CREATE TABLE messages (
     id SERIAL,
+    short_name VARCHAR(40) NOT NULL CHECK (short_name != ''),
     web_short_text VARCHAR(500) NOT NULL CHECK (web_short_text != ''),
     web_long_text VARCHAR(2000) NOT NULL CHECK (web_long_text != ''),
     call_text VARCHAR(500) NOT NULL CHECK (call_text != ''),
@@ -39,7 +40,7 @@ CREATE TABLE messages (
     CONSTRAINT active_when_finite
         CHECK (LOWER_INF(active_when) = FALSE AND
                UPPER_INF(active_when) = FALSE),
-    CONSTRAINT active_when_clopen
+    CONSTRAINT active_when_closed_open
         CHECK (LOWER_INC(active_when) = TRUE AND
                UPPER_INC(active_when) = FALSE)
 );
