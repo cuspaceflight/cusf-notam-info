@@ -21,7 +21,7 @@ CREATE TABLE humans (
     id SERIAL,
     name VARCHAR(50) NOT NULL UNIQUE CHECK (name != ''),
     phone VARCHAR(25) NOT NULL UNIQUE CHECK (phone ~ '^\+[0-9]+$'),
-    -- priority == 0: disabled; otherwise lowest is first.
+    -- priority = 0: disabled; otherwise lowest is first.
     priority SMALLINT NOT NULL CHECK (priority >= 0),
 
     PRIMARY KEY (id)
@@ -32,7 +32,8 @@ CREATE TABLE messages (
     short_name VARCHAR(40) NOT NULL CHECK (short_name != ''),
     web_short_text VARCHAR(500) NOT NULL CHECK (web_short_text != ''),
     web_long_text VARCHAR(2000) NOT NULL CHECK (web_long_text != ''),
-    call_text VARCHAR(500) NOT NULL CHECK (call_text != ''),
+    -- call_text = NULL: pass call straight to humans
+    call_text VARCHAR(500) CHECK (call_text IS NULL OR call_text != ''),
     active_when TSRANGE DEFAULT NULL,
 
     PRIMARY KEY (id),

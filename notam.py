@@ -109,28 +109,28 @@ def humans(seed):
 
     with cursor() as cur:
         cur.execute(query)
-        humans = cur.fetchall()
+        all_humans = cur.fetchall()
 
     rng = random.Random(seed)
-    humans = [(priority + rng.uniform(0.1, 0.2), name, phone)
-              for (priority, name, phone) in humans]
-    humans.sort()
+    all_humans = [(priority + rng.uniform(0.1, 0.2), name, phone)
+                  for (priority, name, phone) in all_humans]
+    all_humans.sort()
 
-    return humans
+    return all_humans
 
 def message():
-    # returns web_short_text, web_long_text, call_text
+    # returns no_message, web_short_text, web_long_text, call_text
     query = "SELECT web_short_text, web_long_text, call_text FROM messages " \
             "WHERE LOCALTIMESTAMP <@ active_when"
 
     with cursor() as cur:
         cur.execute(query)
         if cur.rowcount == 1:
-            return cur.fetchone()
+            return (False, ) + cur.fetchone()
         elif cur.rowcount == 0:
-            return None, None, None
+            return True, None, None, None
         else:
-            assert False, "cur.rowcount in [0, 1]"
+            raise AssertionError("cur.rowcount should be 0 or 1")
 
 ## Misc
 
@@ -148,8 +148,8 @@ def heartbeat():
 
 @app.route('/web.json')
 def web_status():
-    web_short_text, web_long_text, _ = message()
-    if web_short_text is None:
+    no_message, web_short_text, web_long_text, _ = message()
+    if no_message:
         web_short_text = "No upcoming launches in the next three days"
         web_long_text = "No upcoming launches in the next three days"
     return flask.jsonify(short=web_short_text, long=web_long_text)
@@ -167,29 +167,35 @@ def sms():
 def call_start():
     call_log("Call started; from {0}".format(request.form["From"]))
 
+    no_message, _, _, call_text = message()
     r = twiml.Response()
-    # This is the information phone number for the Cambridge University
-    # Spaceflight NOTAM.
-    r.play(url_for('static', filename='audio/greeting.wav'))
-    r.pause(length=1)
 
-    _, _, call_text = message()
+    if not no_message and call_text is None:
+        call_log("Passing call straight to humans")
+        seed = random.getrandbits(32)
+        r.redirect(url_for('call_human', seed=seed, index=0))
 
-    if call_text is None:
-        call_log("Saying 'no launches in the next three days' "
-                 "and offering options")
-        # We are not planning any launches in the next three days.
-        r.play(url_for('static', filename='audio/none_three_days.wav'))
     else:
-        call_log("Introducing robot and saying {0!r}".format(message))
-        # You will shortly hear an automated message detailing the
-        # approximate time of an upcoming launch that we are planning.
-        r.play(url_for('static', filename='audio/robot_intro.wav'))
+        # This is the information phone number for the Cambridge University
+        # Spaceflight NOTAM.
+        r.play(url_for('static', filename='audio/greeting.wav'))
         r.pause(length=1)
-        r.say(call_text)
 
-    r.pause(length=1)
-    options(r)
+        if no_message:
+            call_log("Saying 'no launches in the next three days' "
+                     "and offering options")
+            # We are not planning any launches in the next three days.
+            r.play(url_for('static', filename='audio/none_three_days.wav'))
+        else:
+            call_log("Introducing robot and saying {0!r}".format(call_text))
+            # You will shortly hear an automated message detailing the
+            # approximate time of an upcoming launch that we are planning.
+            r.play(url_for('static', filename='audio/robot_intro.wav'))
+            r.pause(length=1)
+            r.say(call_text)
+
+        r.pause(length=1)
+        options(r)
 
     return str(r)
 
@@ -229,7 +235,7 @@ def call_gather_failed():
     return str(r)
 
 def dial(r, seed, index):
-    priority, name, phone = humans()[index]
+    priority, name, phone = humans(seed)[index]
 
     call_log("Attempt {0}: {1!r} on {2}".format(index, name, phone))
 
