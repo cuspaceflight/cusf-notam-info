@@ -28,20 +28,22 @@ def setup_postgres_pool():
     global postgres_pool
     postgres_pool = ThreadedConnectionPool(1, 10, app.config["POSTGRES"])
 
-def cursor():
+def cursor(*args, **kwargs):
     """
     Get a postgres cursor for immediate use during a request
 
     If a cursor has not yet been used in this request, it connects to the
     database. Further cursors re-use the per-request connection.
     The connection is committed and closed at the end of the request.
+
+    args and kwargs are passed to database.cursor()
     """
 
     assert flask.has_request_context()
     top = flask._app_ctx_stack.top
     if not hasattr(top, '_database'):
         top._database = postgres_pool.getconn()
-    return top._database.cursor()
+    return top._database.cursor(*args, **kwargs)
 
 @app.teardown_appcontext
 def close_db_connection(exception):
@@ -119,16 +121,20 @@ def humans(seed):
     return all_humans
 
 def message():
-    # returns no_message, web_short_text, web_long_text, call_text
-    query = "SELECT web_short_text, web_long_text, call_text FROM messages " \
+    query = "SELECT m.active_when, m.short_name, " \
+            "       m.web_short_text, m.web_long_text, " \
+            "       m.call_text, m.forward_to, " \
+            "       h.name AS forward_name, h.phone AS forward_phone " \
+            "FROM messages AS m " \
+            "LEFT OUTER JOIN humans AS h ON m.forward_to = h.id " \
             "WHERE LOCALTIMESTAMP <@ active_when"
 
-    with cursor() as cur:
+    with cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(query)
         if cur.rowcount == 1:
-            return (False, ) + cur.fetchone()
+            return cur.fetchone()
         elif cur.rowcount == 0:
-            return True, None, None, None
+            return None
         else:
             raise AssertionError("cur.rowcount should be 0 or 1")
 
@@ -148,11 +154,13 @@ def heartbeat():
 
 @app.route('/web.json')
 def web_status():
-    no_message, web_short_text, web_long_text, _ = message()
-    if no_message:
-        web_short_text = "No upcoming launches in the next three days"
-        web_long_text = "No upcoming launches in the next three days"
-    return flask.jsonify(short=web_short_text, long=web_long_text)
+    active_message = message()
+    if not active_message:
+        m = "No upcoming launches in the next three days"
+        return flask.jsonify(short=m, long=m)
+    else:
+        return flask.jsonify(short=active_message["web_short_text"],
+                             long=active_message["web_long_text"])
 
 @app.route('/sms', methods=["POST"])
 def sms():
@@ -167,13 +175,20 @@ def sms():
 def call_start():
     call_log("Call started; from {0}".format(request.form["From"]))
 
-    no_message, _, _, call_text = message()
+    active_message = message()
     r = twiml.Response()
 
-    if not no_message and call_text is None:
-        call_log("Passing call straight to humans")
-        seed = random.getrandbits(32)
-        r.redirect(url_for('call_human', seed=seed, index=0))
+    if active_message and active_message["forward_to"]:
+        name = active_message["forward_name"]
+        phone = active_message["forward_phone"]
+
+        call_log("Forwarding call straight to {0!r} on {1}"
+            .format(name, phone))
+
+        pickup_url = url_for("call_forward_pickup", parent_sid=get_sid())
+        d = r.dial(action=url_for("call_forward_ended"),
+                   callerId=request.form["To"])
+        d.number(phone, url=url_for("call_forward_pickup"))
 
     else:
         # This is the information phone number for the Cambridge University
@@ -181,7 +196,7 @@ def call_start():
         r.play(url_for('static', filename='audio/greeting.wav'))
         r.pause(length=1)
 
-        if no_message:
+        if not active_message:
             call_log("Saying 'no launches in the next three days' "
                      "and offering options")
             # We are not planning any launches in the next three days.
@@ -192,7 +207,7 @@ def call_start():
             # approximate time of an upcoming launch that we are planning.
             r.play(url_for('static', filename='audio/robot_intro.wav'))
             r.pause(length=1)
-            r.say(call_text)
+            r.say(active_message["call_text"])
 
         r.pause(length=1)
         options(r)
@@ -211,20 +226,25 @@ def options(r):
 def call_gathered():
     d = request.form["Digits"]
     r = twiml.Response()
+
     if d == "1":
         call_log("Hanging up (pressed 1)")
+
     elif d == "2":
         seed = random.getrandbits(32)
-        call_log("Forwarding call (pressed 2); seed {0!r}".format(seed))
+        call_log("Trying humans (pressed 2); seed {0!r}".format(seed))
         # Forwarding. In the event that the first society member contacted is
         # in a lecture or otherwise unavailable, a second member will be
         # phoned. This could take a minute or two.
         r.play(url_for('static', filename='audio/forwarding.wav'))
         r.pause(length=1)
-        r.redirect(url_for('call_human', seed=seed, index=0))
+        # call_human(seed, 0)
+        dial(r, seed, 0)
+
     else:
         call_log("Invalid keypress {0}; offering options".format(d))
         options(r)
+
     return str(r)
 
 @app.route('/call/gather_failed', methods=["POST"])
@@ -287,6 +307,24 @@ def call_human_ended(seed, index):
             r.pause(length=1)
             r.hangup()
 
+    return str(r)
+
+@app.route("/call/forward/pickup", methods=["POST"])
+def call_forward_pickup():
+    call_log("Forwarded call picked up")
+    r = twiml.Response()
+    return str(r)
+
+@app.route("/call/forward/ended", methods=["POST"])
+def call_forward_ended():
+    status = request.form["DialCallStatus"]
+    if status == "completed":
+        call_log("Forwarded call completed successfully. Hanging up.")
+    else:
+        call_log("Forwarded call failed: {0}. Hanging up.".format(status))
+
+    r = twiml.Response()
+    r.hangup()
     return str(r)
 
 @app.route("/call/status_callback", methods=["POST"])

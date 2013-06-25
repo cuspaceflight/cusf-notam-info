@@ -1,8 +1,8 @@
 \set ON_ERROR_STOP
 
 DROP TABLE IF EXISTS call_log;
-DROP TABLE IF EXISTS humans;
 DROP TABLE IF EXISTS messages;
+DROP TABLE IF EXISTS humans;
 
 CREATE TABLE call_log (
     id SERIAL,
@@ -32,8 +32,8 @@ CREATE TABLE messages (
     short_name VARCHAR(40) NOT NULL CHECK (short_name != ''),
     web_short_text VARCHAR(500) NOT NULL CHECK (web_short_text != ''),
     web_long_text VARCHAR(2000) NOT NULL CHECK (web_long_text != ''),
-    -- call_text = NULL: pass call straight to humans
     call_text VARCHAR(500) CHECK (call_text IS NULL OR call_text != ''),
+    forward_to INTEGER REFERENCES humans (id),
     active_when TSRANGE DEFAULT NULL,
 
     PRIMARY KEY (id),
@@ -43,7 +43,9 @@ CREATE TABLE messages (
                UPPER_INF(active_when) = FALSE),
     CONSTRAINT active_when_closed_open
         CHECK (LOWER_INC(active_when) = TRUE AND
-               UPPER_INC(active_when) = FALSE)
+               UPPER_INC(active_when) = FALSE),
+    CONSTRAINT forward_xor_text
+        CHECK ((call_text IS NULL) = (forward_to IS NOT NULL))
 );
 
 CREATE INDEX messages_active_index ON messages USING gist (active_when);
