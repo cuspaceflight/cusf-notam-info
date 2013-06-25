@@ -6,8 +6,9 @@ import time
 import re
 import random
 from psycopg2.pool import ThreadedConnectionPool
+import psycopg2.extras
 
-from flask import request, url_for
+from flask import request, url_for, render_template
 
 app = flask.Flask(__name__)
 
@@ -144,6 +145,22 @@ basic_phone_re = re.compile('^\\+[0-9]+$')
 
 
 ## Views
+
+@app.route("/")
+def home():
+    return render_template("home.html", message=message())
+
+@app.route("/log_viewer")
+def log_viewer():
+    return render_template("log_viewer.html")
+
+@app.route("/humans")
+def edit_humans():
+    return render_template("humans.html")
+
+@app.route("/messages")
+def edit_messages():
+    return render_template("messages.html")
 
 @app.route("/heartbeat")
 def heartbeat():

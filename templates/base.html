@@ -1,0 +1,60 @@
+{%- set page_titles = 
+    {"home": "Home", "log_viewer": "Log Viewer",
+     "edit_humans": "Humans", "edit_messages": "Messages"} -%}
+{%- set root_title = "CUSF Notam Info" -%}
+
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        {% if request.endpoint != 'home' %}
+            <title>{{ page_titles[request.endpoint] }} - {{ root_title }}</title>
+        {% else %}
+            <title>{{ root_title }}</title>
+        {% endif %}
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="description" content="CUSF Notam Information Twilio Number">
+        <meta name="author" content="Daniel Richman">
+        <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
+        <link href="{{ url_for('static', filename='css/body-padding.css') }}" rel="stylesheet">
+        <link href="{{ url_for('static', filename='css/bootstrap-responsive.min.css') }}" rel="stylesheet">
+        <link href="{{ url_for('static', filename='css/misc.css') }}" rel="stylesheet">
+    </head>
+
+    <body>
+
+        <div class="navbar navbar-inverse navbar-fixed-top">
+            <div class="navbar-inner">
+                <div class="container-fluid">
+                        
+                    <button type="button" class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+                        <span class="icon-bar"></span>
+                        <span class="icon-bar"></span>
+                        <span class="icon-bar"></span>
+                    </button>
+
+                    <a class="brand" href="/">CUSF Notam Info</a>
+
+                    <div class="nav-collapse collapse">
+                        <ul class="nav">
+                            {% for nav_page, nav_page_name in page_titles|dictsort(false, "value") %}
+                                <li class="{{ 'active' if nav_page == request.endpoint else '' }}">
+                                    <a href="{{ url_for(nav_page) }}">{{ nav_page_name }}</a>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <div class="container page-{{ request.endpoint }}">
+            {% block content %}{% endblock %}
+        </div>
+
+        <script type="text/javascript" src="{{ url_for('static', filename='js/jquery-1.10.1.min.js') }}"></script>
+        <script type="text/javascript" src="{{ url_for('static', filename='js/bootstrap.min.js') }}"></script>
+
+    </body>
+</html>
