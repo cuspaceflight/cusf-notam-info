@@ -66,6 +66,3 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON humans TO "www-data";
 GRANT SELECT, UPDATE ON humans_id_seq TO "www-data";
 GRANT SELECT, INSERT, UPDATE, DELETE ON messages TO "www-data";
 GRANT SELECT, UPDATE ON messages_id_seq TO "www-data";
-
-INSERT INTO humans (name, phone, priority) VALUES
-    ('Daniel Richman', '+447913430431', 1);

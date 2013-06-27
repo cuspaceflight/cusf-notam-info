@@ -342,7 +342,7 @@ def log_viewer(page=None):
         pages += 1
 
     if page is None:
-        return redirect(url_for('log_viewer', page=pages))
+        return redirect(url_for(request.endpoint, page=pages))
 
     if page > pages or page < 1:
         abort(404)
