@@ -2,70 +2,70 @@
 
 {% block content %}
     <div class="row">
-        <div class="span12 active-message">
-            <h1>Active message</h1>
+        <div class="span12">
+            <section id="active-message">
+                <h1>Active message</h1>
 
-            {% if message %}
-                <table class="table table-bordered table-hover">
-                    <tbody>
-                        {% macro message_attr(key, value) %}
-                            <tr>
-                                <th>{{ key }}</th>
-                                <td>{{ value }}</td>
-                            </tr>
-                        {% endmacro %}
+                {% if message %}
+                    <table class="table table-bordered table-hover">
+                        <tbody>
+                            {% macro message_attr(key, value) %}
+                                <tr>
+                                    <th>{{ key }}</th>
+                                    <td>{{ value }}</td>
+                                </tr>
+                            {% endmacro %}
 
-                        {{ message_attr("Name", message.short_name) }}
-                        {{ message_attr("Widget text", message.web_short_text) }}
-                        {{ message_attr("Launches page text", message.web_long_text) }}
-                        {% if message.call_text %}
-                            {{ message_attr("Call text", message.call_text) }}
-                        {% else %}
-                            <tr>
-                                <th>Immediately forward calls to</th>
-                                <td>&ldquo;{{ message.forward_name }}&rdquo; on {{ message.forward_phone }}</td>
-                            </tr>
-                        {% endif %}
-                        {{ message_attr("Active until", message.active_when.upper) }}
-                    </tbody>
-                </table>
-            {% else %}
-                <p class="text-center">Default message (no launches in the next three days)</p>
-            {% endif %}
-        </div>
-    </div>
+                            {{ message_attr("Name", message.short_name) }}
+                            {{ message_attr("Widget text", message.web_short_text) }}
+                            {{ message_attr("Launches page text", message.web_long_text) }}
+                            {% if message.call_text %}
+                                {{ message_attr("Call text", message.call_text) }}
+                            {% else %}
+                                <tr>
+                                    <th>Immediately forward calls to</th>
+                                    <td>&ldquo;{{ message.forward_name }}&rdquo; on {{ message.forward_phone }}</td>
+                                </tr>
+                            {% endif %}
+                            {{ message_attr("Active until", message.active_when.upper) }}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p class="text-center">Default message (no launches in the next three days)</p>
+                {% endif %}
+            </section>
 
-    <div class="row">
-        <div class="span12 management">
-            <h1>Management</h1>
+            <section id="management">
+                <h1>Management</h1>
 
-            <div class="row">
-                <div class="span4">
-                    <p>
-                        <a class="btn btn-large btn-primary" href="{{ url_for('edit_humans') }}">Edit humans</a>
-                    </p>
-                    <p>
-                        Manage where calls are forwarded to after the greeting message
-                        (when not in launch-day &ldquo;immediately forward mode&rdquo;).
-                    </p>
+                <div class="row">
+                    <div class="span4">
+                        <p>
+                            <a class="btn btn-large btn-primary" href="{{ url_for('edit_humans') }}">Edit humans</a>
+                        </p>
+                        <p>
+                            Manage where calls are forwarded to after the greeting message
+                            (when not in launch-day &ldquo;immediately forward mode&rdquo;).
+                        </p>
+                    </div>
+
+                    <div class="span4">
+                        <p>
+                            <a class="btn btn-large btn-primary" href="{{ url_for('edit_messages') }}">Edit messages</a>
+                        </p>
+                        <p>
+                            Change or schedule &ldquo;messages&rdquo; for the CUSF website and
+                            NOTAM information phone number.
+                        </p>
+                    </div>
+
+                    <div class="span4">
+                        <p>
+                            <a class="btn btn-large btn-primary" href="{{ url_for('log_viewer') }}">View call logs</a>
+                        </p>
+                    </div>
                 </div>
-
-                <div class="span4">
-                    <p>
-                        <a class="btn btn-large btn-primary" href="{{ url_for('edit_messages') }}">Edit messages</a>
-                    </p>
-                    <p>
-                        Change or schedule &ldquo;messages&rdquo; for the CUSF website and
-                        NOTAM information phone number.
-                    </p>
-                </div>
-
-                <div class="span4">
-                    <p>
-                        <a class="btn btn-large btn-primary" href="{{ url_for('log_viewer') }}">View call logs</a>
-                    </p>
-                </div>
-            </div>
+            </section>
         </div>
     </div>
 {% endblock %}

@@ -3,12 +3,16 @@
      "edit_humans": "Humans", "edit_messages": "Messages"} -%}
 {%- set root_title = "CUSF Notam Info" -%}
 
+{%- if not page_title -%}
+    {%- set page_title = page_titles[request.endpoint] -%}
+{%- endif -%}
+
 <!DOCTYPE html>
 <html lang="en">
     <head>
         <meta charset="utf-8">
         {% if request.endpoint != 'home' %}
-            <title>{{ page_titles[request.endpoint] }} - {{ root_title }}</title>
+            <title>{{ page_title }} - {{ root_title }}</title>
         {% else %}
             <title>{{ root_title }}</title>
         {% endif %}
@@ -49,7 +53,7 @@
             </div>
         </div>
 
-        <div class="container page-{{ request.endpoint }}">
+        <div class="container" id="page_{{ request.endpoint }}">
             {% block content %}{% endblock %}
         </div>
 

@@ -8,7 +8,8 @@ import random
 from psycopg2.pool import ThreadedConnectionPool
 import psycopg2.extras
 
-from flask import request, url_for, render_template
+from flask import request, url_for, redirect, render_template, \
+                  Markup, jsonify, abort
 
 app = flask.Flask(__name__)
 
@@ -29,7 +30,7 @@ def setup_postgres_pool():
     global postgres_pool
     postgres_pool = ThreadedConnectionPool(1, 10, app.config["POSTGRES"])
 
-def cursor(*args, **kwargs):
+def cursor(real_dict_cursor=False):
     """
     Get a postgres cursor for immediate use during a request
 
@@ -44,7 +45,12 @@ def cursor(*args, **kwargs):
     top = flask._app_ctx_stack.top
     if not hasattr(top, '_database'):
         top._database = postgres_pool.getconn()
-    return top._database.cursor(*args, **kwargs)
+
+    if real_dict_cursor:
+        f = psycopg2.extras.RealDictCursor
+        return top._database.cursor(cursor_factory=f)
+    else:
+        return top._database.cursor()
 
 @app.teardown_appcontext
 def close_db_connection(exception):
@@ -61,6 +67,8 @@ logger = logging.getLogger("notam")
 call_logger = logging.getLogger("notam.call")
 
 def get_sid():
+    assert flask.has_request_context()
+
     if "parent_sid" in request.args:
         # in call_human_pickup: the TwiML executes on the dialed party
         # before connecting to the call, and has a separate ID
@@ -76,23 +84,68 @@ def call_log(message):
     call_logger.info("{0} {1}".format(sid, message))
 
     db_msg = message.encode('ascii', 'replace')
-    query = "INSERT INTO call_log (call, time, message) " \
-            "VALUES (%s, LOCALTIMESTAMP, %s)"
+
+    query1 = "SELECT id FROM calls WHERE sid = %s"
+    query2 = "INSERT INTO calls (sid) VALUES (%s) RETURNING id"
+    query3 = "INSERT INTO call_log (call, time, message) " \
+             "VALUES (%s, LOCALTIMESTAMP, %s)"
 
     with cursor() as cur:
-        cur.execute(query, (sid, db_msg))
+        cur.execute(query1, (sid, ))
+        if not cur.rowcount:
+            cur.execute(query2, (sid, ))
+        call_id = cur.fetchone()[0]
+        cur.execute(query3, (call_id, db_msg))
 
-def get_call_log():
-    assert flask.has_request_context()
+def get_call_sid(call_id):
+    query = "SELECT sid FROM calls WHERE id = %s"
+    with cursor() as cur:
+        cur.execute(query, (call_id, ))
+        if cur.rowcount:
+            return cur.fetchone()[0]
+        else:
+            raise ValueError("No such call_id")
+
+def get_call_log_for_id(call_id, return_dict=False):
+    query = "SELECT time, message FROM call_log " \
+            "WHERE call = %s " \
+            "ORDER BY time ASC, id ASC"
+
+    with cursor(return_dict) as cur:
+        cur.execute(query, (call_id, ))
+        return cur.fetchall()
+
+def get_call_log_for_sid(sid=None, return_dict=False):
+    if sid is None:
+        sid = get_sid()
 
     query = "SELECT time, message FROM call_log " \
-            "WHERE call = %s ORDER BY time ASC, id ASC"
-    fmt = lambda time, message: \
-            "{0} {1}".format(time.strftime("%H:%M:%S"), message)
+            "WHERE call = (SELECT id FROM calls WHERE sid = %s) " \
+            "ORDER BY time ASC, id ASC"
+
+    with cursor(return_dict) as cur:
+        cur.execute(query, (sid, ))
+        return cur.fetchall()
+
+def calls_count():
+    query = "SELECT count(*) AS count FROM calls"
 
     with cursor() as cur:
-        cur.execute(query, (get_sid(), ))
-        return "\n".join(fmt(time, message) for time, message in cur)
+        cur.execute(query)
+        return cur.fetchone()[0]
+
+def call_log_first_lines(offset=0, limit=100):
+    query = "SELECT " \
+            "DISTINCT ON (call) " \
+            "   call, time AS first_time, " \
+            "   message AS first_message " \
+            "FROM call_log " \
+            "ORDER BY call ASC, time ASC, id ASC " \
+            "LIMIT %s OFFSET %s"
+
+    with cursor(True) as cur:
+        cur.execute(query, (limit, offset))
+        return cur.fetchall()
 
 def email(subject, message):
     logger.debug("email: {0} {1!r}".format(subject, message))
@@ -130,7 +183,7 @@ def message():
             "LEFT OUTER JOIN humans AS h ON m.forward_to = h.id " \
             "WHERE LOCALTIMESTAMP <@ active_when"
 
-    with cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+    with cursor(True) as cur:
         cur.execute(query)
         if cur.rowcount == 1:
             return cur.fetchone()
@@ -150,9 +203,48 @@ basic_phone_re = re.compile('^\\+[0-9]+$')
 def home():
     return render_template("home.html", message=message())
 
-@app.route("/log_viewer")
-def log_viewer():
-    return render_template("log_viewer.html")
+@app.route("/log")
+@app.route("/log/<int:page>")
+def log_viewer(page=None):
+    page_size = 100
+    count = calls_count()
+
+    if count == 0:
+        if page is not None:
+            abort(404)
+        else:
+            return render_template("log_viewer_empty.html")
+
+    pages = count / page_size
+    if count % page_size:
+        pages += 1
+
+    if page is None:
+        return redirect(url_for('log_viewer', page=pages))
+
+    if page > pages or page < 1:
+        abort(404)
+
+    offset = (page - 1) * page_size
+    calls = call_log_first_lines(offset, page_size)
+
+    return render_template("log_viewer.html",
+                calls=calls, pages=pages, page_num=page)
+
+@app.route("/log/call/<int:call>")
+def log_viewer_call(call):
+    try:
+        sid = get_call_sid(call)
+    except ValueError:
+        abort(404)
+
+    log = get_call_log_for_id(call, return_dict=True)
+    if not log:
+        abort(404)
+
+    return render_template("log_viewer_call.html",
+                page_title="Call {0}".format(call),
+                call=call, sid=sid, log=log)
 
 @app.route("/humans")
 def edit_humans():
@@ -174,10 +266,10 @@ def web_status():
     active_message = message()
     if not active_message:
         m = "No upcoming launches in the next three days"
-        return flask.jsonify(short=m, long=m)
+        return jsonify(short=m, long=m)
     else:
-        return flask.jsonify(short=active_message["web_short_text"],
-                             long=active_message["web_long_text"])
+        return jsonify(short=active_message["web_short_text"],
+                       long=active_message["web_long_text"])
 
 @app.route('/sms', methods=["POST"])
 def sms():
@@ -355,6 +447,11 @@ def call_ended():
 
     call_log("Call from {0} ended after {1} seconds with status '{2}'"
                 .format(number, duration, status))
-    email("Call from {0}".format(number), get_call_log())
+
+    fmt = lambda time, message: \
+            "{0} {1}".format(time.strftime("%H:%M:%S"), message)
+    lines = (fmt(time, message) for time, message in get_call_log_for_sid())
+    call_log_str = "\n".join(lines)
+    email("Call from {0}".format(number), call_log_str)
 
     return "OK"

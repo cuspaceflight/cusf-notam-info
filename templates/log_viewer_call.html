@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <div class="row">
+        <div class="span12">
+            <h1>Call #{{ call }}</h1>
+
+            <div class="row" id="header">
+                <div class="span6">
+                    <p><b>Twilo SID</b>: {{ sid }}</p>
+                </div>
+                <div class="span5">
+                    <p><b>Start time</b>: {{ log[0].time }}</p>
+                </div>
+                <div class="span1">
+                    <a class="btn btn-small btn-block" href="{{ url_for('log_viewer', page=request.args.get("return_to", None)) }}">Back</a>
+                </div>
+            </div>
+
+            <table class="table table-bordered table-condensed">
+                <thead>
+                    <th>Time</th>
+                    <th>Message</th>
+                </thead>
+                <tbody>
+                    {% for line in log %}
+                        <tr>
+                            <td>{{ line.time.time().replace(microsecond=0) }}</td>
+                            <td>{{ line.message }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+{% endblock %}

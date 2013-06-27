@@ -1,19 +1,27 @@
 \set ON_ERROR_STOP
 
 DROP TABLE IF EXISTS call_log;
+DROP TABLE IF EXISTS calls;
 DROP TABLE IF EXISTS messages;
 DROP TABLE IF EXISTS humans;
 
+CREATE TABLE calls (
+    id SERIAL,
+    sid VARCHAR(120) NOT NULL UNIQUE CHECK (sid != ''),
+
+    PRIMARY KEY (id)
+);
+
 CREATE TABLE call_log (
     id SERIAL,
-    call VARCHAR(120) NOT NULL CHECK (call != ''),
+    call INTEGER REFERENCES calls (id),
     time TIMESTAMP NOT NULL,
     message VARCHAR(500) NOT NULL CHECK (message != ''),
 
     PRIMARY KEY (id)
 );
 
-CREATE INDEX call_log_index ON call_log (call, time, id);
+CREATE INDEX call_log_single_call_log_index ON call_log (call, time, id);
 -- for query:
 --   SELECT message FROM call_log WHERE call = %s ORDER BY time ASC, id ASC;
 
@@ -50,6 +58,8 @@ CREATE TABLE messages (
 
 CREATE INDEX messages_active_index ON messages USING gist (active_when);
 
+GRANT SELECT, INSERT, UPDATE, DELETE ON calls TO "www-data";
+GRANT SELECT, UPDATE ON calls_id_seq TO "www-data";
 GRANT SELECT, INSERT, UPDATE, DELETE ON call_log TO "www-data";
 GRANT SELECT, UPDATE ON call_log_id_seq TO "www-data";
 GRANT SELECT, INSERT, UPDATE, DELETE ON humans TO "www-data";
