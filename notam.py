@@ -368,8 +368,62 @@ def log_viewer_call(call):
                 page_title="Call {0}".format(call),
                 call=call, sid=sid, log=log)
 
-@app.route("/humans", methods=["GET"])
+@app.route("/humans", methods=["GET", "POST"])
 def edit_humans():
+    change_method = False
+
+    # if the update succeeds, redirect so that the method becomes GET and
+    # the refresh button works as espected.
+    # flask handles the message flashing and the template fills out the form
+    # with either current or failed-to-update values.
+
+    # note that the update/insert queries will have been the first in this
+    # request's transaction, so the rollback doesn't hit anything unexpected
+
+    if request.form.get("edit_priorities", False):
+        changed = 0
+
+        try:
+            for human in all_humans():
+                field_name = "priority_{0}".format(human["id"])
+                new_priority = int(request.form[field_name])
+                if human["priority"] != new_priority:
+                    update_human_priority(human["id"], new_priority)
+                    changed += 1
+
+        except psycopg2.DataError:
+            flash('Priority must be in range 0-32767', 'error')
+            connection().rollback()
+
+        else:
+            if changed:
+                if changed == 1:
+                    flash('Priority updated', 'success')
+                else:
+                    flash('{0} priorities updated'.format(changed), 'success')
+            else:
+                flash('No priorioties changed', 'warning')
+
+            return redirect(url_for(request.endpoint))
+
+    elif request.form.get("add_human"):
+        name = request.form["name"]
+        phone = request.form["phone"]
+        priority = int(request.form["priority"])
+
+        try:
+            add_human(name, phone, priority)
+        except psycopg2.IntegrityError:
+            flash('Invalid data: name and phone must be nonempty, unique, '
+                  'phone of form "+NNNNNNNNNNNN"', 'error')
+            connection().rollback()
+        except psycopg2.DataError:
+            flash('Priority must be in range 0-32767', 'error')
+            connection().rollback()
+        else:
+            flash('Human added', 'success')
+            return redirect(url_for(request.endpoint))
+
     humans = all_humans()
 
     priorities = set(h["priority"] for h in humans)
@@ -386,35 +440,6 @@ def edit_humans():
     return render_template("humans.html",
             humans=humans,
             lowest_priorities=lowest_priorities)
-
-@app.route("/humans", methods=["POST"])
-def edit_humans_save():
-    if request.form.get("edit_priorities", False):
-        changed = 0
-
-        for human in all_humans():
-            field_name = "priority_{0}".format(human["id"])
-            new_priority = int(request.form[field_name])
-            if human["priority"] != new_priority:
-                update_human_priority(human["id"], new_priority)
-                changed += 1
-
-        if changed:
-            if changed == 1:
-                flash('Priority updated', 'success')
-            else:
-                flash('{0} priorities updated'.format(changed), 'success')
-        else:
-            flash('No priorioties changed', 'warning')
-
-    if request.form.get("add_human"):
-        name = request.form["name"]
-        phone = request.form["phone"]
-        priority = int(request.form["priority"])
-        add_human(name, phone, priority)
-        flash('Human added', 'success')
-
-    return redirect(url_for('edit_humans'))
 
 @app.route("/messages")
 def edit_messages():

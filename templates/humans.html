@@ -27,7 +27,8 @@
                                 <td>{{ human.name }}</td>
                                 <td>{{ human.phone }}</td>
                                 <td><input name="priority_{{ human.id }}" class="input-mini" type="text"
-                                           value="{{ human.priority }}" required pattern="0|[1-9][0-9]*"></td>
+                                           value="{{ request.form.get("priority_{0}".format(human.id), human.priority) }}"
+                                           required pattern="0|[1-9][0-9]*" maxlength="4"></td>
                             </tr>
                         {% endfor %}
                     </tbody>
@@ -40,9 +41,15 @@
 
             <form name="add_human" method="POST" action="{{ url_for(request.endpoint) }}" class="form-inline">
                 <input type="hidden" name="add_human" value="true">
-                <input name="name" class="input-medium" type="text" placeholder="Name" required>
-                <input name="phone" class="input-medium" type="text" placeholder="Phone" required pattern="\+[0-9]+">
-                <input name="priority" class="input-small" type="text" placeholder="Priority" required pattern="0|[1-9][0-9]*">
+                <input class="input-medium" type="text" placeholder="Name"
+                       name="name" required maxlength="50"
+                       value="{{ request.form.name }}">
+                <input class="input-medium" type="text" placeholder="Phone" 
+                       name="phone" required pattern="\+[0-9]+" maxlength="25" 
+                       value="{{ request.form.phone }}">
+                <input class="input-small" type="text" placeholder="Priority"
+                       name="priority" required pattern="0|[1-9][0-9]*" maxlength="4"
+                       value="{{ request.form.priority }}">
                 <button class="btn" type="submit"><i class="icon-ok"></i> Save</button>
             </form>
         </div>
