@@ -9,7 +9,7 @@ from psycopg2.pool import ThreadedConnectionPool
 import psycopg2.extras
 
 from flask import request, url_for, redirect, render_template, \
-                  Markup, jsonify, abort, flash
+                  Markup, jsonify, abort, flash, session
 
 app = flask.Flask(__name__)
 
@@ -299,24 +299,65 @@ def future_messages():
     Returns a list of messages in the same form as active_message()
     """
 
-    query = "SELECT m.active_when, m.short_name, " \
+    query = "SELECT m.id, m.active_when, m.short_name, " \
             "       m.web_short_text, m.web_long_text, " \
             "       m.call_text, m.forward_to, " \
             "       h.name AS forward_name, h.phone AS forward_phone, " \
             "       LOCALTIMESTAMP <@ active_when AS active " \
             "FROM messages AS m " \
             "LEFT OUTER JOIN humans AS h ON m.forward_to = h.id " \
-            "WHERE TSRANGE(LOCALTIMESTAMP, NULL) && active_when"
-    # Uses the index; LOCALTIMESTAMP < UPPER(active_when) does not.
+            "WHERE TSRANGE(LOCALTIMESTAMP, NULL) && active_when " \
+            "ORDER BY active_when"
+
+    # intersecting with [localtimestamp, infinity) uses the index;
+    # LOCALTIMESTAMP < UPPER(active_when) does not.
 
     with cursor(True) as cur:
         cur.execute(query)
         return cur.fetchall()
 
+def do_delete_message(message_id):
+    query = "DELETE FROM messages WHERE id = %s"
+    with cursor() as cur:
+        cur.execute(query, (message_id, ))
+
 
 ## Misc
 
 basic_phone_re = re.compile('^\\+[0-9]+$')
+
+@app.template_global('csrf_token')
+def csrf_token():
+    """
+    Return the CSRF token for the current session
+
+    If not already generated, session["_csrf_token"] is set to a random
+    string. The token is used for the whole life of the session.
+    """
+
+    if "_csrf_token" not in session:
+        session["_csrf_token"] = hex(random.getrandbits(64))
+    return session["_csrf_token"]
+
+@app.template_global('csrf_token_input')
+def csrf_token_input():
+    """Returns a hidden input element with the CSRF token"""
+    return Markup('<input type="hidden" name="_csrf_token" value="{0}">') \
+            .format(csrf_token())
+
+def check_csrf_token():
+    """Checks that request.form["_csrf_token"] is correct, aborting if not"""
+    if "_csrf_token" not in request.form:
+        logger.warning("Expected CSRF Token: not present")
+        abort(400)
+    if request.form["_csrf_token"] != csrf_token():
+        logger.warning("CSRF Token incorrect")
+        abort(400)
+
+@app.before_request
+def auto_check_csrf():
+    if request.form:
+        check_csrf_token()
 
 
 ## Views
@@ -370,8 +411,6 @@ def log_viewer_call(call):
 
 @app.route("/humans", methods=["GET", "POST"])
 def edit_humans():
-    change_method = False
-
     # if the update succeeds, redirect so that the method becomes GET and
     # the refresh button works as espected.
     # flask handles the message flashing and the template fills out the form
@@ -406,7 +445,7 @@ def edit_humans():
 
             return redirect(url_for(request.endpoint))
 
-    elif request.form.get("add_human"):
+    elif request.form.get("add_human", False):
         name = request.form["name"]
         phone = request.form["phone"]
         priority = int(request.form["priority"])
