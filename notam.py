@@ -269,13 +269,14 @@ def active_message():
     """
     Get the active message, if it exists.
     
-    Returns a {"active_when": a, "short_name": s, "web_short_text": wst,
-    "web_long_text": wlt, "call_text": ct, "forward_to": human_id, 
-    "forward_name": human_name, "forward_phone": human_phone} dict,
+    Returns a {"id": i, "active_when": a, "short_name": s,
+    "web_short_text": wst, "web_long_text": wlt, "call_text": ct,
+    "forward_to": human_id, "forward_name": human_name,
+    "forward_phone": human_phone} dict,
     or None if there isn't an active message.
     """
 
-    query = "SELECT m.active_when, m.short_name, " \
+    query = "SELECT m.id, m.active_when, m.short_name, " \
             "       m.web_short_text, m.web_long_text, " \
             "       m.call_text, m.forward_to, " \
             "       h.name AS forward_name, h.phone AS forward_phone " \
@@ -481,9 +482,31 @@ def edit_humans():
             lowest_priorities=lowest_priorities)
 
 @app.route("/messages")
-def edit_messages():
-    future_messages = future_messages()
-    return render_template("messages.html")
+def list_messages():
+    messages = future_messages()
+
+    last_upper = None
+    for message in messages:
+        if last_upper is None: # first message
+            message["gap_preceeding"] = not message["active"]
+        else:
+            message["gap_preceeding"] = \
+                    last_upper != message["active_when"].lower
+
+        last_upper = message["active_when"].upper
+
+    return render_template("messages.html", messages=messages)
+
+@app.route("/messages/<int:message>/edit")
+def edit_message(message):
+    return 'Edit {0}'.format(message)
+
+@app.route("/messages/<int:message>/delete", methods=["POST"])
+def delete_message(message):
+    check_csrf_token()
+    do_delete_message(message)
+    flash("Message deleted", "success")
+    return redirect(url_for('list_messages'))
 
 @app.route("/heartbeat")
 def heartbeat():

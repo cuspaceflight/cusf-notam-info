@@ -1,5 +1,65 @@
 {% extends "base.html" %}
 
 {% block content %}
-    <p>Hello World</p>
+    <div class="row">
+        <div class="span12" id="messages">
+            {% for message in messages %}
+                <table class="table table-bordered table-hover">
+                    <thead>
+                        <tr>
+                            <td class="message_buttons">
+                                <a class="btn btn-mini btn-warning" href="{{ url_for("edit_message", message=message.id) }}">
+                                    <i class="icon-pencil icon-white"></i> Edit
+                                </a>
+                                <form method="POST" action="{{ url_for("delete_message", message=message.id) }}">
+                                    <input type="hidden" name="message" value="message.id">
+                                    {{ csrf_token_input() }}
+                                    <button class="btn btn-mini btn-danger">
+                                        <i class="icon-remove icon-white"></i> Delete
+                                    </button>
+                                </form>
+                            </td>
+                            <th class="message_header">
+                                &ldquo;{{ message.short_name }}&rdquo;
+                            </th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {% macro message_attr(key, value) %}
+                            <tr>
+                                <th>{{ key }}</th>
+                                <td>{{ value }}</td>
+                            </tr>
+                        {% endmacro %}
+
+                        <tr>
+                            <th>Active</th>
+                            <td>
+                                {{ message.active_when.lower }} &ndash; {{ message.active_when.upper }}
+                                {% if message.active %}
+                                    <i class="text-info">(active now)</i>
+                                {% elif message.gap_preceeding %}
+                                    <i class="text-warning">(gap preceeding)</i>
+                                {% endif %}
+                                {% set last_upper = message.active_when.upper %}
+                            </td>
+                        </tr>
+
+                        {{ message_attr("Widget text", message.web_short_text) }}
+                        {{ message_attr("Launches page text", message.web_long_text) }}
+
+                        {% if message.call_text %}
+                            {{ message_attr("Call text", message.call_text) }}
+                        {% else %}
+                            <tr>
+                                <th>Immediately forward calls to</th>
+                                <td>&ldquo;{{ message.forward_name }}&rdquo; on {{ message.forward_phone }}</td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            {% endfor %}
+        </div>
+    </div>
 {% endblock %}
