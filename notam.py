@@ -30,31 +30,45 @@ def setup_postgres_pool():
     global postgres_pool
     postgres_pool = ThreadedConnectionPool(1, 10, app.config["POSTGRES"])
 
-def cursor(real_dict_cursor=False):
+def connection():
     """
-    Get a postgres cursor for immediate use during a request
+    Get a connection to use in this request
 
-    If a cursor has not yet been used in this request, it connects to the
-    database. Further cursors re-use the per-request connection.
+    If no connection has been used in this request, it connects to the
+    database. Further calls to connection() in this request context will
+    get the same connection.
+
     The connection is committed and closed at the end of the request.
-
-    args and kwargs are passed to database.cursor()
     """
 
     assert flask.has_request_context()
     top = flask._app_ctx_stack.top
     if not hasattr(top, '_database'):
         top._database = postgres_pool.getconn()
+    return top._database
+
+def cursor(real_dict_cursor=False):
+    """
+    Get a postgres cursor for immediate use during a request
+
+    If a cursor has not yet been used in this request, it connects to the
+    database. Further cursors re-use the per-request connection.
+
+    The connection is committed and closed at the end of the request.
+
+    If real_dict_cursor is set, a psycopg2.extras.RealDictCursor is returned
+    """
 
     if real_dict_cursor:
         f = psycopg2.extras.RealDictCursor
-        return top._database.cursor(cursor_factory=f)
+        return connection().cursor(cursor_factory=f)
     else:
-        return top._database.cursor()
+        return connection().cursor()
 
 @app.teardown_appcontext
 def close_db_connection(exception):
     """Commit and close the per-request postgres connection"""
+
     top = flask._app_ctx_stack.top
     if hasattr(top, '_database'):
         top._database.commit()
@@ -67,6 +81,8 @@ logger = logging.getLogger("notam")
 call_logger = logging.getLogger("notam.call")
 
 def get_sid():
+    """Get the active call SID from the request, using parent_sid if present"""
+
     assert flask.has_request_context()
 
     if "parent_sid" in request.args:
@@ -78,6 +94,7 @@ def get_sid():
 
 def call_log(message):
     """Log message (via logging) and add it to the call_log table"""
+
     assert flask.has_request_context()
 
     sid = get_sid()
@@ -98,6 +115,8 @@ def call_log(message):
         cur.execute(query3, (call_id, db_msg))
 
 def get_call_sid(call_id):
+    """Get the call SID for a call id"""
+
     query = "SELECT sid FROM calls WHERE id = %s"
     with cursor() as cur:
         cur.execute(query, (call_id, ))
@@ -106,16 +125,32 @@ def get_call_sid(call_id):
         else:
             raise ValueError("No such call_id")
 
-def get_call_log_for_id(call_id, return_dict=False):
+def get_call_log_for_id(call_id, return_dicts=False):
+    """
+    Get the whole call log for a given call id
+    
+    If return_dicts is false, a list of (time, message) tuples is returned;
+    if true {"time": time, "message": message} dicts.
+    """
+
     query = "SELECT time, message FROM call_log " \
             "WHERE call = %s " \
             "ORDER BY time ASC, id ASC"
 
-    with cursor(return_dict) as cur:
+    with cursor(return_dicts) as cur:
         cur.execute(query, (call_id, ))
         return cur.fetchall()
 
-def get_call_log_for_sid(sid=None, return_dict=False):
+def get_call_log_for_sid(sid=None, return_dicts=False):
+    """
+    Get the whole call log for a given call SID
+    
+    If no SID is specified, it will use the SID from the current request.
+
+    If return_dicts is false, a list of (time, message) tuples is returned;
+    if true {"time": time, "message": message} dicts.
+    """
+
     if sid is None:
         sid = get_sid()
 
@@ -123,11 +158,13 @@ def get_call_log_for_sid(sid=None, return_dict=False):
             "WHERE call = (SELECT id FROM calls WHERE sid = %s) " \
             "ORDER BY time ASC, id ASC"
 
-    with cursor(return_dict) as cur:
+    with cursor(return_dicts) as cur:
         cur.execute(query, (sid, ))
         return cur.fetchall()
 
 def calls_count():
+    """Count the rows in the calls table"""
+
     query = "SELECT count(*) AS count FROM calls"
 
     with cursor() as cur:
@@ -135,6 +172,14 @@ def calls_count():
         return cur.fetchone()[0]
 
 def call_log_first_lines(offset=0, limit=100):
+    """
+    Get a list of calls and for each, their first lines in the call log
+    
+    A list of {"call": call_id, "first_time": time, "first_message": message}
+    dicts is returned.
+    """
+    # assumes entries in the calls table have at least one line in the log
+
     query = "SELECT " \
             "DISTINCT ON (call) " \
             "   call, time AS first_time, " \
@@ -148,6 +193,8 @@ def call_log_first_lines(offset=0, limit=100):
         return cur.fetchall()
 
 def email(subject, message):
+    """Send an email"""
+
     logger.debug("email: {0} {1!r}".format(subject, message))
 
     email = "From: {0}\r\nTo: {1}\r\nSubject: CUSF Notam Twilio {2}\r\n\r\n" \
@@ -163,24 +210,49 @@ def email(subject, message):
 ## Other database queries
 
 def all_humans():
-    query = "SELECT id, name, phone, priority FROM humans ORDER BY id"
+    """
+    Get all humans, sorted by priority then name
+    
+    A list of {"id": id, "name": name, "phone": phone, "priority": priority}
+    dicts is returned.
+    """
+
+    query = "SELECT id, name, phone, priority FROM humans " \
+            "ORDER BY priority ASC, name ASC " \
+
+    # put disabled humans at the end. priority is a smallint, so...
+    key = lambda h: 100000 if h["priority"] == 0 else h["priority"]
+
     with cursor(True) as cur:
         cur.execute(query)
-        return cur.fetchall()
+        humans = cur.fetchall()
+        humans.sort(key=key)
+        return humans
 
 def update_human_priority(human_id, new_priority):
+    """Update the priority column of a single human"""
     query = "UPDATE humans SET priority = %s WHERE id = %s"
     with cursor() as cur:
         cur.execute(query, (new_priority, human_id))
 
 def add_human(name, phone, priority):
+    """Add a human"""
     query = "INSERT INTO humans (name, phone, priority) VALUES (%s, %s, %s)"
     with cursor() as cur:
         cur.execute(query, (name, phone, priority))
 
 def shuffled_humans(seed):
+    """
+    Get all humans, sorted by priority.
+
+    Humans with equal priorities are shuffled randomly, with an RNG
+    seeded with seed.
+
+    Returns a list of (priority, name, phone) tuples.
+    """
+
     query = "SELECT priority, name, phone FROM humans " \
-            "WHERE priority > 0 ORDER BY id"
+            "WHERE priority > 0 ORDER BY id ASC"
 
     with cursor() as cur:
         cur.execute(query)
@@ -193,7 +265,16 @@ def shuffled_humans(seed):
 
     return humans
 
-def message():
+def active_message():
+    """
+    Get the active message, if it exists.
+    
+    Returns a {"active_when": a, "short_name": s, "web_short_text": wst,
+    "web_long_text": wlt, "call_text": ct, "forward_to": human_id, 
+    "forward_name": human_name, "forward_phone": human_phone} dict,
+    or None if there isn't an active message.
+    """
+
     query = "SELECT m.active_when, m.short_name, " \
             "       m.web_short_text, m.web_long_text, " \
             "       m.call_text, m.forward_to, " \
@@ -211,6 +292,28 @@ def message():
         else:
             raise AssertionError("cur.rowcount should be 0 or 1")
 
+def future_messages():
+    """
+    Get all messages that are active now or will be active in the future
+
+    Returns a list of messages in the same form as active_message()
+    """
+
+    query = "SELECT m.active_when, m.short_name, " \
+            "       m.web_short_text, m.web_long_text, " \
+            "       m.call_text, m.forward_to, " \
+            "       h.name AS forward_name, h.phone AS forward_phone, " \
+            "       LOCALTIMESTAMP <@ active_when AS active " \
+            "FROM messages AS m " \
+            "LEFT OUTER JOIN humans AS h ON m.forward_to = h.id " \
+            "WHERE TSRANGE(LOCALTIMESTAMP, NULL) && active_when"
+    # Uses the index; LOCALTIMESTAMP < UPPER(active_when) does not.
+
+    with cursor(True) as cur:
+        cur.execute(query)
+        return cur.fetchall()
+
+
 ## Misc
 
 basic_phone_re = re.compile('^\\+[0-9]+$')
@@ -220,7 +323,7 @@ basic_phone_re = re.compile('^\\+[0-9]+$')
 
 @app.route("/")
 def home():
-    return render_template("home.html", message=message())
+    return render_template("home.html", message=active_message())
 
 @app.route("/log")
 @app.route("/log/<int:page>")
@@ -257,7 +360,7 @@ def log_viewer_call(call):
     except ValueError:
         abort(404)
 
-    log = get_call_log_for_id(call, return_dict=True)
+    log = get_call_log_for_id(call, return_dicts=True)
     if not log:
         abort(404)
 
@@ -315,6 +418,7 @@ def edit_humans_save():
 
 @app.route("/messages")
 def edit_messages():
+    future_messages = future_messages()
     return render_template("messages.html")
 
 @app.route("/heartbeat")
@@ -326,13 +430,13 @@ def heartbeat():
 
 @app.route('/web.json')
 def web_status():
-    active_message = message()
-    if not active_message:
+    message = active_message()
+    if not message:
         m = "No upcoming launches in the next three days"
         return jsonify(short=m, long=m)
     else:
-        return jsonify(short=active_message["web_short_text"],
-                       long=active_message["web_long_text"])
+        return jsonify(short=message["web_short_text"],
+                       long=message["web_long_text"])
 
 @app.route('/sms', methods=["POST"])
 def sms():
@@ -347,12 +451,12 @@ def sms():
 def call_start():
     call_log("Call started; from {0}".format(request.form["From"]))
 
-    active_message = message()
+    message = active_message()
     r = twiml.Response()
 
-    if active_message and active_message["forward_to"]:
-        name = active_message["forward_name"]
-        phone = active_message["forward_phone"]
+    if message and message["forward_to"]:
+        name = message["forward_name"]
+        phone = message["forward_phone"]
 
         call_log("Forwarding call straight to {0!r} on {1}"
             .format(name, phone))
@@ -368,7 +472,7 @@ def call_start():
         r.play(url_for('static', filename='audio/greeting.wav'))
         r.pause(length=1)
 
-        if not active_message:
+        if not message:
             call_log("Saying 'no launches in the next three days' "
                      "and offering options")
             # We are not planning any launches in the next three days.
@@ -379,7 +483,7 @@ def call_start():
             # approximate time of an upcoming launch that we are planning.
             r.play(url_for('static', filename='audio/robot_intro.wav'))
             r.pause(length=1)
-            r.say(active_message["call_text"])
+            r.say(message["call_text"])
 
         r.pause(length=1)
         options(r)
