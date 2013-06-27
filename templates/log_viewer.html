@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% set page_title = "Log Viewer" %}
 
 {% set n_pages = 11 %} {# should be odd #}
 
@@ -46,8 +47,6 @@
 {% block content %}
     <div class="row">
         <div class="span12">
-            <h1>Call Log Viewer</h1>
-
             {{ pagination() }}
 
             <table class="table table-hover table-bordered table-condensed" id="calls">

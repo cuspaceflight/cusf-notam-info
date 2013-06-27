@@ -22,6 +22,9 @@ h1 {
 #page_log_viewer_call #header p {
     padding-top: 2px;
 }
+#page_log_viewer h1 {
+    margin-bottom: 0;
+}
 
 #page_edit_humans #humans_list td {
     vertical-align: middle;

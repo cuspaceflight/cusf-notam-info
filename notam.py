@@ -406,9 +406,7 @@ def log_viewer_call(call):
     if not log:
         abort(404)
 
-    return render_template("log_viewer_call.html",
-                page_title="Call {0}".format(call),
-                call=call, sid=sid, log=log)
+    return render_template("log_viewer_call.html", call=call, sid=sid, log=log)
 
 @app.route("/humans", methods=["GET", "POST"])
 def edit_humans():

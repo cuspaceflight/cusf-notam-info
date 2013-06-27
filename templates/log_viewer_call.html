@@ -1,10 +1,9 @@
 {% extends "base.html" %}
+{% set page_title = "Call #{0}".format(call) %}
 
 {% block content %}
     <div class="row">
         <div class="span12">
-            <h1>Call #{{ call }}</h1>
-
             <div class="row" id="header">
                 <div class="span6">
                     <p><b>Twilo SID</b>: {{ sid }}</p>

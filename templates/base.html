@@ -1,17 +1,15 @@
-{%- set page_titles = 
-    {"home": "Home", "log_viewer": "Log Viewer",
-     "edit_humans": "Humans", "list_messages": "Messages"} -%}
 {%- set root_title = "CUSF Notam Info" -%}
 
-{%- if not page_title -%}
-    {%- set page_title = page_titles[request.endpoint] -%}
-{%- endif -%}
+{%- set nav_items = (
+    ("home", "Home"), ("log_viewer", "Log Viewer"),
+    ("edit_humans", "Humans"), ("list_messages", "Messages")
+) -%}
 
 <!DOCTYPE html>
 <html lang="en">
     <head>
         <meta charset="utf-8">
-        {% if request.endpoint != 'home' %}
+        {% if page_title %}
             <title>{{ page_title }} - {{ root_title }}</title>
         {% else %}
             <title>{{ root_title }}</title>
@@ -30,7 +28,7 @@
         <div class="navbar navbar-inverse navbar-fixed-top">
             <div class="navbar-inner">
                 <div class="container-fluid">
-                        
+
                     <button type="button" class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
                         <span class="icon-bar"></span>
                         <span class="icon-bar"></span>
@@ -41,7 +39,7 @@
 
                     <div class="nav-collapse collapse">
                         <ul class="nav">
-                            {% for nav_page, nav_page_name in page_titles|dictsort(false, "value") %}
+                            {% for nav_page, nav_page_name in nav_items %}
                                 <li class="{{ 'active' if nav_page == request.endpoint else '' }}">
                                     <a href="{{ url_for(nav_page) }}">{{ nav_page_name }}</a>
                                 </li>
@@ -67,6 +65,14 @@
                     {% endfor %}
                 </div>
             {% endwith %}
+
+            {% if page_title %}
+                <div class="row">
+                    <div class="span12">
+                        <h1>{{ page_title }}</h1>
+                    </div>
+                </div>
+            {% endif %}
 
             {% block content %}{% endblock %}
         </div>
