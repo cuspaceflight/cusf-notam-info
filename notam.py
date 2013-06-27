@@ -9,7 +9,7 @@ from psycopg2.pool import ThreadedConnectionPool
 import psycopg2.extras
 
 from flask import request, url_for, redirect, render_template, \
-                  Markup, jsonify, abort
+                  Markup, jsonify, abort, flash
 
 app = flask.Flask(__name__)
 
@@ -159,20 +159,39 @@ def email(subject, message):
     server.sendmail(app.config['EMAIL_FROM'], app.config['EMAIL_TO'], email)
     server.quit()
 
-def humans(seed):
+
+## Other database queries
+
+def all_humans():
+    query = "SELECT id, name, phone, priority FROM humans ORDER BY id"
+    with cursor(True) as cur:
+        cur.execute(query)
+        return cur.fetchall()
+
+def update_human_priority(human_id, new_priority):
+    query = "UPDATE humans SET priority = %s WHERE id = %s"
+    with cursor() as cur:
+        cur.execute(query, (new_priority, human_id))
+
+def add_human(name, phone, priority):
+    query = "INSERT INTO humans (name, phone, priority) VALUES (%s, %s, %s)"
+    with cursor() as cur:
+        cur.execute(query, (name, phone, priority))
+
+def shuffled_humans(seed):
     query = "SELECT priority, name, phone FROM humans " \
-            "WHERE priority > 0"
+            "WHERE priority > 0 ORDER BY id"
 
     with cursor() as cur:
         cur.execute(query)
-        all_humans = cur.fetchall()
+        humans = cur.fetchall()
 
     rng = random.Random(seed)
-    all_humans = [(priority + rng.uniform(0.1, 0.2), name, phone)
-                  for (priority, name, phone) in all_humans]
-    all_humans.sort()
+    humans = [(priority + rng.uniform(0.1, 0.2), name, phone)
+              for (priority, name, phone) in humans]
+    humans.sort()
 
-    return all_humans
+    return humans
 
 def message():
     query = "SELECT m.active_when, m.short_name, " \
@@ -246,9 +265,53 @@ def log_viewer_call(call):
                 page_title="Call {0}".format(call),
                 call=call, sid=sid, log=log)
 
-@app.route("/humans")
+@app.route("/humans", methods=["GET"])
 def edit_humans():
-    return render_template("humans.html")
+    humans = all_humans()
+
+    priorities = set(h["priority"] for h in humans)
+
+    try:
+        priorities.remove(0)
+    except KeyError:
+        pass
+
+    lowest_priorities = sorted(priorities)[:2]
+    while len(lowest_priorities) < 2:
+        lowest_priorities.append(None)
+
+    return render_template("humans.html",
+            humans=humans,
+            lowest_priorities=lowest_priorities)
+
+@app.route("/humans", methods=["POST"])
+def edit_humans_save():
+    if request.form.get("edit_priorities", False):
+        changed = 0
+
+        for human in all_humans():
+            field_name = "priority_{0}".format(human["id"])
+            new_priority = int(request.form[field_name])
+            if human["priority"] != new_priority:
+                update_human_priority(human["id"], new_priority)
+                changed += 1
+
+        if changed:
+            if changed == 1:
+                flash('Priority updated', 'success')
+            else:
+                flash('{0} priorities updated'.format(changed), 'success')
+        else:
+            flash('No priorioties changed', 'warning')
+
+    if request.form.get("add_human"):
+        name = request.form["name"]
+        phone = request.form["phone"]
+        priority = int(request.form["priority"])
+        add_human(name, phone, priority)
+        flash('Human added', 'success')
+
+    return redirect(url_for('edit_humans'))
 
 @app.route("/messages")
 def edit_messages():
@@ -364,7 +427,7 @@ def call_gather_failed():
     return str(r)
 
 def dial(r, seed, index):
-    priority, name, phone = humans(seed)[index]
+    priority, name, phone = shuffled_humans(seed)[index]
 
     call_log("Attempt {0}: {1!r} on {2}".format(index, name, phone))
 

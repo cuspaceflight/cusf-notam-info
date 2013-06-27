@@ -1,5 +1,60 @@
 {% extends "base.html" %}
 
+{% set row_classes = {
+        lowest_priorities[0]: 'success',
+        lowest_priorities[1]: 'info',
+        0: 'muted'
+    }
+%}
+
 {% block content %}
-    <p>Hello World</p>
+    <div class="row">
+        <div class="span6">
+            <h3>Humans list</h3>
+
+            <form name="edit_priorities" method="POST" action="{{ url_for(request.endpoint) }}">
+                <input type="hidden" name="edit_priorities" value="true">
+
+                <table class="table table-bordered table-hover" id="humans_list">
+                    <thead>
+                        <th>Name</th>
+                        <th>Phone</th>
+                        <th>Priority</th>
+                    </thead>
+                    <tbody>
+                        {% for human in humans %}
+                            <tr class="{{ row_classes[human.priority] }}">
+                                <td>{{ human.name }}</td>
+                                <td>{{ human.phone }}</td>
+                                <td><input name="priority_{{ human.id }}" class="input-mini" type="text"
+                                           value="{{ human.priority }}" required pattern="0|[1-9][0-9]*"></td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+                <button class="btn" type="submit"><i class="icon-ok"></i> Update priorities</button>
+            </form>
+
+            <h3>Add human</h3>
+
+            <form name="add_human" method="POST" action="{{ url_for(request.endpoint) }}" class="form-inline">
+                <input type="hidden" name="add_human" value="true">
+                <input name="name" class="input-medium" type="text" placeholder="Name" required>
+                <input name="phone" class="input-medium" type="text" placeholder="Phone" required pattern="\+[0-9]+">
+                <input name="priority" class="input-small" type="text" placeholder="Priority" required pattern="0|[1-9][0-9]*">
+                <button class="btn" type="submit"><i class="icon-ok"></i> Save</button>
+            </form>
+        </div>
+
+        <div class="span6">
+            <h3>Priority</h3>
+
+            <p>Humans are phoned in order of priority, humans with equal priorities are shuffled randomly.</p>
+            <p>
+                Rows cannot be deleted; humans with priority equal to zero are ignored; "disabled"
+                (though still may be chosen as targets for immediate forwarding (see messages)).
+            </p>
+        </div>
+    </div>
 {% endblock %}

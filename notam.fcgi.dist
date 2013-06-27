@@ -5,6 +5,9 @@ from logging.handlers import SysLogHandler, SMTPHandler
 from flup.server.fcgi import WSGIServer
 from notam import app
 
+# Used for message flashing only
+app.secret_key = ''
+
 app.config['POSTGRES'] = "dbname=cusf-notam-info"
 app.config['EMAIL_TO'] = ["main@danielrichman.co.uk"]
 app.config['EMAIL_FROM'] = "cusf-notam-info@yocto.danielrichman.co.uk"
