@@ -505,7 +505,8 @@ def list_messages():
 
         last_upper = message["active_when"].upper
 
-    return render_template("messages.html", messages=messages)
+    return render_template("message_list.html", messages=messages,
+            page=page, pages=pages)
 
 @app.route("/messages/new")
 @app.route("/messages/<int:message_id>/edit")
