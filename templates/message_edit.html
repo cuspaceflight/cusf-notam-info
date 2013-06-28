@@ -17,8 +17,8 @@
             <form method="POST" action="{{ url_for(request.endpoint, message_id=id, return_to=return_to) }}" class="form-horizontal">
                 {{ csrf_token_input() }}
 
-                {% macro control_group(name, label, caller) %}
-                    <div class="control-group">
+                {% macro control_group(name, label, caller, class='') %}
+                    <div class="control-group {{ class }}">
                         <label class="control-label" for="{{ name }}">{{ label }}</label>
                         <div class="controls">
                             {{ caller() }}
@@ -26,29 +26,46 @@
                     </div>
                 {% endmacro %}
 
-                {% macro input_text(name, label, value, extra='', class='input-large') %}
-                    {% call control_group(name, label) %}
+                {% macro input_text(name, label, value, maxlength, extra="", required=true, class="input-large", cg_class="") %}
+                    {% call control_group(name, label, class=cg_class) %}
                         <input type="text" id="{{ name }}" name="{{ name }}" class="{{ class }}"
-                               value="{{ request.form.get(name, value) }}" {{ extra|safe }} required>
+                               value="{{ value }}" {{ extra|safe }} maxlength="{{ maxlength }}" {{ "required" if required }}>
                     {% endcall %}
                 {% endmacro %}
 
-                {{ input_text("short_name", "Name", short_name, class="input-large") }}
+                {{ input_text("short_name", "Name", short_name, 40, class="input-large", cg_class="gap_after") }}
 
                 {% set datetime_pattern = 'placeholder="YYYY-MM-DD HH:MM:SS" required pattern="\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d"' %}
-                {{ input_text("active_when_lower", "Active from", active_when.lower, extra=datetime_pattern) }}
-                {{ input_text("active_when_upper", "... until", active_when.upper, extra=datetime_pattern) }}
+                {{ input_text("active_when_lower", "Active from", active_when.lower, none, extra=datetime_pattern) }}
+                {% call control_group("active_when_upper", "... until", class="gap_after") %}
+                    <input type="text" id="active_when_upper" name="active_when_upper"
+                           value="{{ active_when.upper }}" {{ datetime_pattern|safe }} required>
+                    <span class="help-block">Note that all datetimes are UTC</span>
+                {% endcall %}
 
-                {{ input_text("web_short_text", "Widget text", web_short_text, class="input-large") }}
-                {% call control_group("web_long_text", "Launch page text") %}
-                    <textarea id="web_long_text" name="web_long_text" class="input-xxlarge" rows="4" required>
-                        {{- request.form.get('web_long_text', web_long_text) -}}
+                {{ input_text("web_short_text", "Widget text", web_short_text, 500, class="input-xlarge") }}
+                {% call control_group("web_long_text", "Launch page text", class="gap_after") %}
+                    <textarea id="web_long_text" name="web_long_text" class="input-xxlarge" rows="4" maxlength="2000" required>
+                        {{- web_long_text -}}
                     </textarea>
+                {% endcall %}
+
+                {{ input_text("call_text", "Twilio call text", call_text if call_text, 500, class="input-xlarge", required=false) }}
+                {% call control_group("forward_to", "... or immediately forward calls to", class="gap_after") %}
+                    <select name="forward_to" id="forward_to">
+                        <option value=""></option>
+                        {% for human in humans %}
+                            <option value="{{ human.id }}" {{ "selected" if human.id == forward_to }}>
+                                &ldquo;{{ human.name }}&rdquo; on {{ human.phone }}
+                            </option>
+                        {% endfor %}
+                    </select>
                 {% endcall %}
 
                 <div class="control-group">
                     <div class="controls">
-                        <button class="btn" type="submit"><i class="icon-ok"></i> Save</button>
+                        <button class="btn btn-primary" type="submit"><i class="icon-ok icon-white"></i> Save</button>
+                        <button class="btn" type="reset"><i class="icon-trash"></i> Reset</button>
                         <a class="btn" href="{{ url_for('list_messages', page=return_to) }}"><i class="icon-ban-circle"></i> Back</a>
                     </div>
                 </div>

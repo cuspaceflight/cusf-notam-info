@@ -334,6 +334,66 @@ def get_message(message_id):
         cur.execute(query, (message_id, ))
         return cur.fetchone()
 
+def upsert_message(message):
+    """
+    Insert or update a message (depending on whether message["id"] is present)
+
+    message should be a dict in the same form as active_message() returns,
+    minus the 'active', 'forward_name', 'forward_phone' keys,
+    and with the 'id' key optional.
+
+    Automatically moves intersecting (active_when) messages out of the way,
+    returning a list of affected message dicts in form:
+    {"id": id, "short_name": short_name, "action": action}
+    where action is one of "deleted", "end_earlier", "start_later".
+    """
+
+    query1 = "WITH " \
+             "deleted AS ( " \
+             "    DELETE FROM messages " \
+             "    WHERE id != %(id)s AND active_when <@ %(n)s " \
+             "    RETURNING id, short_name, 'delete'::TEXT AS action " \
+             "), " \
+             "end_earlier AS ( " \
+             "    UPDATE messages " \
+             "    SET active_when = " \
+             "        TSRANGE(LOWER(active_when), LOWER(%(n)s)) " \
+             "    WHERE id != %(id)s AND NOT active_when <@ %(n)s AND " \
+             "        active_when && %(n)s AND active_when < %(n)s " \
+             "    RETURNING id, short_name, 'end_earlier'::TEXT AS action " \
+             "), " \
+             "start_later AS ( "\
+             "    UPDATE messages " \
+             "    SET active_when = " \
+             "        TSRANGE(UPPER(%(n)s), UPPER(active_when)) " \
+             "    WHERE id != %(id)s AND NOT active_when <@ %(n)s AND " \
+             "        active_when && %(n)s AND active_when > %(n)s " \
+             "    RETURNING id, short_name, 'start_later'::TEXT AS action " \
+             ") " \
+             "SELECT * FROM deleted " \
+             "UNION SELECT * FROM end_earlier " \
+             "UNION SELECT * FROM start_later"
+
+    columns = ("short_name", "web_short_text", "web_long_text",
+               "call_text", "forward_to", "active_when")
+
+    query2 = "UPDATE messages SET {0} WHERE id = %(id)s" \
+             .format(','.join('{0} = %({0})s'.format(c) for c in columns))
+    query3 = "INSERT INTO messages ({0}) VALUES ({1})" \
+             .format(','.join(columns), ','.join(('%s', ) * len(columns)))
+
+    with cursor(True) as cur:
+        params = {"n": message["active_when"], "id": message.get("id", None)}
+        cur.execute(query1, params)
+        moved_messages = cur.fetchall()
+
+        if message.get("id", None) is not None:
+            cur.execute(query2, message)
+        else:
+            cur.execute(query3, message)
+
+    return moved_messages
+
 def do_delete_message(message_id):
     """Delete message by id"""
     query = "DELETE FROM messages WHERE id = %s"
@@ -443,6 +503,14 @@ def show_which_pages_responsive(page, pages, phone=5, tablet=7, desktop=11):
 @app.template_global('datetime_now')
 def datetime_now():
     return datetime.datetime.now()
+
+def default_active_when():
+    today = datetime.datetime.now() \
+            .replace(hour=0, minute=0, second=0, microsecond=0)
+    days = lambda n: datetime.timedelta(days=n)
+    lower = today + days(1)
+    upper = today + days(2)
+    return psycopg2.extras.DateTimeRange(lower, upper, bounds='[)')
 
 
 ## Views
@@ -624,17 +692,110 @@ def edit_message(message_id=None):
     return_to = request.args.get("return_to", None)
 
     if message_id is None:
-        default_date = datetime.datetime.today() \
-                .replace(hour=0, minute=0, second=0, microsecond=0)
-        active_when = {"lower": default_date, "upper": default_date}
-        message = {"id": None, "active_when": active_when}
+        # tomorrow 00:00:00
+        message = {"id": None, "active_when": default_active_when()}
     else:
         message = get_message(message_id)
         if message is None:
             abort(404)
 
     return render_template("message_edit.html", return_to=return_to,
-                           **message)
+                           humans=all_humans(), **message)
+
+@app.route("/messages/new", methods=["POST"])
+@app.route("/message/<int:message_id>/edit", methods=["POST"])
+def edit_message_save(message_id=None):
+    message = {"id": message_id}
+    return_to = request.args.get("return_to", None)
+
+    if message_id is not None:
+        new_type = "edited"
+        action_name = "updated"
+    else:
+        new_type = "new"
+        action_name = "added"
+
+    for key in ("short_name", "web_short_text", "web_long_text",
+                "call_text", "forward_to"):
+        message[key] = request.form[key]
+
+    if message["call_text"] == "":
+        message["call_text"] = None
+
+    if message["forward_to"] == "":
+        message["forward_to"] = None
+    else:
+        message["forward_to"] = int(message["forward_to"])
+
+    parse = lambda s: datetime.datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
+
+    # this is for the template, to fill out the form
+    active_when_dict = {"lower": request.form["active_when_lower"],
+                        "upper": request.form["active_when_upper"]}
+
+    try:
+        lower = parse(request.form["active_when_lower"])
+        upper = parse(request.form["active_when_upper"])
+        if lower >= upper:
+            raise ValueError
+    except ValueError as e:
+        flash('Invalid datetime range', 'error')
+        message["active_when"] = active_when_dict
+        return render_template("message_edit.html", return_to=return_to,
+                               humans=all_humans(), **message)
+
+    message["active_when"] = \
+            psycopg2.extras.DateTimeRange(lower, upper, bounds='[)')
+
+    if (message["call_text"] == None) == (message["forward_to"] == None):
+        flash('Specify exactly one of "Twilio call text" and '
+              '"immediately forward call to"', 'error')
+        return render_template("message_edit.html", return_to=return_to,
+                               humans=all_humans(), **message)
+
+    try:
+        moved_messages = upsert_message(message)
+    except (psycopg2.IntegrityError, psycopg2.DataError):
+        connection().rollback()
+        logger.warning("PostgreSQL error", exc_info=True)
+        abort(400)
+    except psycopg2.InternalError as e:
+        connection().rollback()
+        if e.pgcode != psycopg2.errorcodes.RAISE_EXCEPTION:
+            raise
+
+        flash('Update forbidden: {0}'.format(e.diag.message_primary), 'error')
+
+        if message_id is not None:
+            # Trigger failures for updating existing messages are due to
+            # forbidding all changes except upper bounds in some cases, so
+            # reset the form:
+            message = get_message(message_id)
+
+        return render_template("message_edit.html", return_to=return_to,
+                               humans=all_humans(), **message)
+
+    for moved_message in moved_messages:
+        action = moved_message["action"]
+        name = moved_message["short_name"]
+
+        if action == "delete":
+            flash('Deleted message "{0}" since {1} message '
+                  'completely covers it.'.format(name, new_type),
+                  'warning')
+        elif action == "end_earlier":
+            flash('Message "{0}" now ends earlier ({1}) since '
+                  '{2} message starts then.'
+                  .format(name, lower, new_type),
+                  'warning')
+        elif action == "start_later":
+            flash('Message "{0}" now starts later ({1}) since '
+                  '{2} message starts then.'
+                  .format(name, upper, new_type),
+                  'warning')
+
+    flash("Message {0}".format(action_name), "success")
+    return redirect(url_for("list_messages", return_to=return_to))
 
 @app.route("/message/<int:message>/delete", methods=["POST"])
 def delete_message(message):

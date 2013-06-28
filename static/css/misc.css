@@ -66,3 +66,10 @@ h1 {
     text-align: center;
     font-size: 150%;
 }
+
+#page_edit_message .control-group.gap_after {
+    margin-bottom: 30px;
+}
+#page_edit_message select {
+    width: auto;
+}
