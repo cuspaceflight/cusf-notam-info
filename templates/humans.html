@@ -34,7 +34,8 @@
                     </tbody>
                 </table>
 
-                <button class="btn" type="submit"><i class="icon-ok"></i> Update priorities</button>
+                <button class="btn btn-primary" type="submit"><i class="icon-ok icon-white"></i> Update priorities</button>
+                <button class="btn" type="reset"><i class="icon-trash"></i> Reset</button>
             </form>
 
             <h3>Add human</h3>
@@ -52,7 +53,9 @@
                 <input class="input-small" type="text" placeholder="Priority"
                        name="priority" required pattern="0|[1-9][0-9]*" maxlength="4"
                        value="{{ request.form.priority }}">
-                <button class="btn" type="submit"><i class="icon-ok"></i> Save</button>
+
+                <button class="btn btn-primary" type="submit"><i class="icon-ok icon-white"></i> Save</button>
+                <button class="btn" type="reset"><i class="icon-trash"></i></button>
             </form>
         </div>
 
