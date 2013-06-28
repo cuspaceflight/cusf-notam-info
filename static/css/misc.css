@@ -10,6 +10,9 @@ h1 {
     margin-bottom: 40px;
 }
 
+#page_log_viewer .pagination .page_number {
+    width: 25px;
+}
 #page_log_viewer .call_id {
     font-family: monospace;
 }

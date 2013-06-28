@@ -1,53 +1,12 @@
 {% extends "base.html" %}
+{% from "pagination.html" import pagination %}
+
 {% set page_title = "Log Viewer" %}
-
-{% set n_pages = 11 %} {# should be odd #}
-
-{% if pages < n_pages %}
-    {% set show_pages = range(1, pages + 1) %}
-{% elif page_num <= (n_pages // 2) %}
-    {% set show_pages = range(1, n_pages + 1) %}
-{% elif page_num > pages - (n_pages // 2) %}
-    {% set show_pages = range(pages - n_pages + 1, pages + 1) %}
-{% else %}
-    {% set show_pages = range(page_num - (n_pages // 2),
-                              page_num + (n_pages // 2) + 1) %}
-{% endif %}
-
-{% macro pagination() %}
-    <div class="pagination pagination-centered">
-        <ul>
-            {% if page_num != 1 %}
-                <li><a href="{{ url_for('log_viewer', page=1) }}">&laquo; Oldest</a></li>
-                <li><a href="{{ url_for('log_viewer', page=page_num - 1) }}">&lsaquo; Older</a></li>
-            {% else %}
-                <li class="disabled"><span>&laquo; Oldest</span></li>
-                <li class="disabled"><span>&lsaquo; Older</span></li>
-            {% endif %}
-
-            {% for n in show_pages %}
-                {% if n == page_num %}
-                    <li class="active"><span>{{ n }}</span></li>
-                {% else %}
-                    <li><a href="{{ url_for('log_viewer', page=n) }}">{{ n }}</a></li>
-                {% endif %}
-            {% endfor %}
-
-            {% if page_num != pages %}
-                <li><a href="{{ url_for('log_viewer', page=page_num + 1) }}">Newer &rsaquo;</a></li>
-                <li><a href="{{ url_for('log_viewer', page=pages) }}">Newest &raquo;</a></li>
-            {% else %}
-                <li class="disabled"><span>Newer &rsaquo;</span></li>
-                <li class="disabled"><span>Newest &raquo;</span></li>
-            {% endif %}
-        </ul>
-    </div>
-{% endmacro %}
 
 {% block content %}
     <div class="row">
         <div class="span12">
-            {{ pagination() }}
+            {{ pagination(page, pages) }}
 
             <table class="table table-hover table-bordered table-condensed" id="calls">
                 <thead>
@@ -62,14 +21,14 @@
                             <td class="call_id">{{ call.call }}</td>
                             <td>{{ call.first_time.replace(microsecond=0) }}</td>
                             <td>{{ call.first_message }}</td>
-                            <td><a class="btn btn-small btn-block" href='{{ url_for('log_viewer_call', call=call.call, return_to=page_num) }}'>View log</a></td>
+                            <td><a class="btn btn-small btn-block" href='{{ url_for('log_viewer_call', call=call.call, return_to=page) }}'>View log</a></td>
                         </tr>
                     {% endfor %}
                 </tbody>
             </table>
 
             {% if calls|length > 20 %}
-                {{ pagination() }}
+                {{ pagination(page, pages) }}
             {% endif %}
         </div>
     </div>

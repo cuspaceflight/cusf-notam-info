@@ -1,0 +1,29 @@
+{% macro pagination(page, pages) %}
+    <div class="pagination pagination-centered">
+        <ul>
+            {% if page != 1 %}
+                <li><a href="{{ url_for(request.endpoint, page=1) }}">&laquo;<span class="hidden-phone"> Oldest</span></a></li>
+                <li><a href="{{ url_for(request.endpoint, page=page - 1) }}">&lsaquo;<span class="hidden-phone"> Older</span></a></li>
+            {% else %}
+                <li class="disabled"><span>&laquo;<span class="hidden-phone"> Oldest</span></span></li>
+                <li class="disabled"><span>&lsaquo;<span class="hidden-phone"> Older</span></span></li>
+            {% endif %}
+
+            {% for n, hide in show_which_pages_responsive(page, pages) %}
+                {% if n == page %}
+                    <li class="active {{ hide }}"><span class="page_number">{{ n }}</span></li>
+                {% else %}
+                    <li class="{{ hide }}"><a class="page_number" href="{{ url_for(request.endpoint, page=n) }}">{{ n }}</a></li>
+                {% endif %}
+            {% endfor %}
+
+            {% if page != pages %}
+                <li><a href="{{ url_for(request.endpoint, page=page + 1) }}"><span class="hidden-phone">Newer </span>&rsaquo;</a></li>
+                <li><a href="{{ url_for(request.endpoint, page=pages) }}"><span class="hidden-phone">Newest </span>&raquo;</a></li>
+            {% else %}
+                <li class="disabled"><span><span class="hidden-phone">Newer </span>&rsaquo;</span></li>
+                <li class="disabled"><span><span class="hidden-phone">Newest </span>&raquo;</span></li>
+            {% endif %}
+        </ul>
+    </div>
+{% endmacro %}

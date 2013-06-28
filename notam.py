@@ -372,6 +372,66 @@ def auto_check_csrf():
     if request.form:
         check_csrf_token()
 
+@app.template_global('show_which_pages')
+def show_which_pages(page, pages, show=5):
+    """
+    Work out which page numbers to display
+
+    Pages are numbered 1 to pages, inclusive.
+
+    page: the current page
+    pages: the total number of pages.
+    show: maximum number of pages to show
+
+    show must be odd.
+    """
+
+    assert show % 2 == 1
+
+    if pages < show:
+        return range(1, pages + 1)
+    elif page <= (show // 2):
+        return range(1, show + 1)
+    elif page > pages - (show // 2):
+        return range(pages - show + 1, pages + 1)
+    else:
+        return range(page - (show // 2), page + (show // 2) + 1)
+
+@app.template_global('show_which_pages_responsive')
+def show_which_pages_responsive(page, pages, phone=5, tablet=7, desktop=11):
+    """
+    Run show_which_pages for multiple show sizes
+
+    For each type (phone, tablet, desktop) calls
+    show_which_pages(page, pages, type).
+    It then takes the unions of all the page numbers returned, and builds
+    (and returns) a list of (page_number, class) tuples,
+    where class is 'hidden-tablet' or 'hidden-phone hidden-tablet' as
+    appropriate.
+
+    Need phone <= tablet <= desktop.
+    """
+
+    if not phone <= tablet <= desktop:
+        raise ValueError("Need phone <= tablet <= desktop")
+
+    all_pages = show_which_pages(page, pages, desktop)
+    tablet_pages = set(show_which_pages(page, pages, tablet))
+    phone_pages = set(show_which_pages(page, pages, phone))
+
+    # phone_pages < tablet_pages < all_pages
+    assert tablet_pages - set(all_pages) == set()
+    assert phone_pages - tablet_pages == set()
+
+    def page_class(page):
+        if page in phone_pages:
+            return ''
+        elif page in tablet_pages:
+            return 'hidden-phone'
+        else:
+            return 'hidden-phone hidden-tablet'
+
+    return [(page, page_class(page)) for page in all_pages]
 
 ## Views
 
@@ -405,7 +465,7 @@ def log_viewer(page=None):
     calls = call_log_first_lines(offset, page_size)
 
     return render_template("log_viewer.html",
-                calls=calls, pages=pages, page_num=page)
+                calls=calls, pages=pages, page=page)
 
 @app.route("/log/call/<int:call>")
 def log_viewer_call(call):
@@ -418,7 +478,8 @@ def log_viewer_call(call):
     if not log:
         abort(404)
 
-    return render_template("log_viewer_call.html", call=call, sid=sid, log=log)
+    return render_template("log_viewer_call.html", call=call, sid=sid, log=log,
+                           return_to=request.args.get("return_to", None))
 
 @app.route("/humans", methods=["GET", "POST"])
 def edit_humans():

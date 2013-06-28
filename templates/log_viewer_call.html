@@ -12,7 +12,7 @@
                     <p><b>Start time</b>: {{ log[0].time }}</p>
                 </div>
                 <div class="span1">
-                    <a class="btn btn-small btn-block" href="{{ url_for('log_viewer', page=request.args.get("return_to", None)) }}">Back</a>
+                    <a class="btn btn-small btn-block" href="{{ url_for('log_viewer', page=return_to) }}">Back</a>
                 </div>
             </div>
 
