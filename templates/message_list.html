@@ -51,7 +51,7 @@
                         {{ message_attr("Launches page text", message.web_long_text) }}
 
                         {% if message.call_text %}
-                            {{ message_attr("Call text", message.call_text) }}
+                            {{ message_attr("Twilio call text", message.call_text) }}
                         {% else %}
                             <tr>
                                 <th>Immediately forward calls to</th>
