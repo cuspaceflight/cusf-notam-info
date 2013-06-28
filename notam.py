@@ -635,7 +635,7 @@ def edit_message(message_id=None):
 
 @app.route("/message/<int:message>/delete", methods=["POST"])
 def delete_message(message):
-    check_csrf_token()
+    check_csrf_token() # since request.form would otherwise be empty
 
     try:
         do_delete_message(message)

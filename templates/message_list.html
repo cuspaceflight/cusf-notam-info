@@ -35,7 +35,6 @@
 
                                 {% if message.active_when.lower > datetime_now() %}
                                     <form method="POST" action="{{ url_for("delete_message", message=message.id) }}">
-                                        <input type="hidden" name="message" value="message.id">
                                         {{ csrf_token_input() }}
                                         <button class="btn btn-mini btn-danger">
                                             <i class="icon-remove icon-white"></i> Delete
