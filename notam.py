@@ -621,6 +621,8 @@ def list_messages(page=None):
 @app.route("/messages/new", methods=["GET"])
 @app.route("/message/<int:message_id>/edit", methods=["GET"])
 def edit_message(message_id=None):
+    return_to = request.args.get("return_to", None)
+
     if message_id is None:
         default_date = datetime.datetime.today() \
                 .replace(hour=0, minute=0, second=0, microsecond=0)
@@ -631,11 +633,13 @@ def edit_message(message_id=None):
         if message is None:
             abort(404)
 
-    return render_template("message_edit.html", **message)
+    return render_template("message_edit.html", return_to=return_to,
+                           **message)
 
 @app.route("/message/<int:message>/delete", methods=["POST"])
 def delete_message(message):
     check_csrf_token() # since request.form would otherwise be empty
+    return_to = request.args.get("return_to", None)
 
     try:
         do_delete_message(message)
@@ -648,7 +652,7 @@ def delete_message(message):
     else:
         flash("Message deleted", "success")
 
-    return redirect(url_for('list_messages'))
+    return redirect(url_for('list_messages', page=return_to))
 
 @app.route("/heartbeat")
 def heartbeat():

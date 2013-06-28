@@ -14,7 +14,7 @@
 {% block content %}
     <div class="row">
         <div class="span12">
-            <form method="POST" action="{{ url_for(request.endpoint, message_id=id) }}" class="form-horizontal">
+            <form method="POST" action="{{ url_for(request.endpoint, message_id=id, return_to=return_to) }}" class="form-horizontal">
                 {{ csrf_token_input() }}
 
                 {% macro control_group(name, label, caller) %}
@@ -49,6 +49,7 @@
                 <div class="control-group">
                     <div class="controls">
                         <button class="btn" type="submit"><i class="icon-ok"></i> Save</button>
+                        <a class="btn" href="{{ url_for('list_messages', page=return_to) }}"><i class="icon-ban-circle"></i> Back</a>
                     </div>
                 </div>
             </form>

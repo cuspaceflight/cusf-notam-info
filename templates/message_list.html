@@ -16,7 +16,7 @@
         <div class="span12" id="header">
             <span>Note that all times are UTC.</span>
 
-            <a href="{{ url_for("edit_message") }}" class="btn btn-primary pull-right" id="add_message">Add Message</a>
+            <a href="{{ url_for("edit_message", return_to=page) }}" class="btn btn-primary pull-right" id="add_message">Add Message</a>
         </div>
     </div>
 
@@ -28,13 +28,13 @@
                         <tr>
                             <td class="message_buttons">
                                 {% if message.active_when.upper > datetime_now() %}
-                                    <a class="btn btn-mini btn-warning" href="{{ url_for("edit_message", message_id=message.id) }}">
+                                    <a class="btn btn-mini btn-warning" href="{{ url_for("edit_message", message_id=message.id, return_to=page) }}">
                                         <i class="icon-pencil icon-white"></i> Edit
                                     </a>
                                 {% endif %}
 
                                 {% if message.active_when.lower > datetime_now() %}
-                                    <form method="POST" action="{{ url_for("delete_message", message=message.id) }}">
+                                    <form method="POST" action="{{ url_for("delete_message", message=message.id, return_to=page) }}">
                                         {{ csrf_token_input() }}
                                         <button class="btn btn-mini btn-danger">
                                             <i class="icon-remove icon-white"></i> Delete
