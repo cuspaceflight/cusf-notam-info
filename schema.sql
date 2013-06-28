@@ -5,6 +5,10 @@ DROP TABLE IF EXISTS calls;
 DROP TABLE IF EXISTS messages;
 DROP TABLE IF EXISTS humans;
 
+DROP FUNCTION IF EXISTS messages_past_insert() CASCADE;
+DROP FUNCTION IF EXISTS messages_past_update() CASCADE;
+DROP FUNCTION IF EXISTS messages_past_delete() CASCADE;
+
 CREATE TABLE calls (
     id SERIAL,
     sid VARCHAR(120) NOT NULL UNIQUE CHECK (sid != ''),
@@ -57,13 +61,110 @@ CREATE TABLE messages (
         CHECK ((call_text IS NULL) = (forward_to IS NOT NULL))
 );
 
+CREATE FUNCTION messages_past_insert()
+    RETURNS TRIGGER AS
+    $$
+        BEGIN
+            IF CURRENT_USER != 'www-data' THEN
+                RETURN NEW;
+            END IF;
+
+            -- forbid adding a new row that is active at any time in the past
+            IF NEW.active_when && TSRANGE(NULL, LOCALTIMESTAMP) THEN
+                RAISE 'Cannot add a message that changes the past.';
+            END IF;
+
+            RETURN NEW;
+        END
+    $$
+    LANGUAGE plpgsql;
+
+CREATE TRIGGER messages_past_insert_trigger
+    BEFORE INSERT
+    ON messages
+    FOR EACH ROW EXECUTE PROCEDURE messages_past_insert();
+
+CREATE FUNCTION messages_past_update()
+    RETURNS TRIGGER AS
+    $$
+        BEGIN
+            IF CURRENT_USER != 'www-data' THEN
+                RETURN NEW;
+            END IF;
+
+            IF OLD.active_when <@ TSRANGE(NULL, LOCALTIMESTAMP) THEN
+                -- forbid modifying rows completely in the past
+                IF OLD != NEW THEN
+                    RAISE
+                        'Cannot change a row that is completely in the past';
+                END IF;
+            ELSIF LOCALTIMESTAMP <@ OLD.active_when THEN
+                -- forbid modifying anything other than the upper bound of
+                -- active_when if the row is active
+                OLD.active_when =
+                    TSRANGE(LOWER(OLD.active_when), UPPER(NEW.active_when));
+                IF OLD != NEW THEN
+                    RAISE 'Can only change the upper bound of an active row.';
+                END IF;
+
+                -- but don't allow the upper bound to be pushed into the past
+                IF  UPPER(NEW.active_when) < LOCALTIMESTAMP THEN
+                    RAISE 'Cannot move the upper bound into the past.';
+                END IF;
+            ELSE
+                -- else the message is in the future, so forbid it from being
+                -- moved into the past
+                IF NEW.active_when <@ TSRANGE(NULL, LOCALTIMESTAMP) THEN
+                    RAISE 'Cannot move a message into the past.';
+                END IF;
+            END IF;
+
+            RETURN NEW;
+        END
+    $$
+    LANGUAGE plpgsql;
+
+CREATE TRIGGER messages_past_update_trigger
+    BEFORE UPDATE
+    ON messages
+    FOR EACH ROW EXECUTE PROCEDURE messages_past_update();
+
+CREATE FUNCTION messages_past_delete()
+    RETURNS TRIGGER AS
+    $$
+        BEGIN
+            IF CURRENT_USER != 'www-data' THEN
+                RETURN OLD;
+            END IF;
+
+            -- forbid deleting a row that is active at any time in the past
+            IF OLD.active_when && TSRANGE(NULL, LOCALTIMESTAMP) THEN
+                RAISE 'Cannot change the past.';
+            END IF;
+
+            RETURN OLD;
+        END
+    $$
+    LANGUAGE plpgsql;
+
+CREATE TRIGGER messages_past_delete_trigger
+    BEFORE DELETE
+    ON messages
+    FOR EACH ROW EXECUTE PROCEDURE messages_past_delete();
+
 CREATE INDEX messages_active_index ON messages USING gist (active_when);
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON calls TO "www-data";
+-- allow adding to the call log
+GRANT SELECT, INSERT ON calls TO "www-data";
 GRANT SELECT, UPDATE ON calls_id_seq TO "www-data";
-GRANT SELECT, INSERT, UPDATE, DELETE ON call_log TO "www-data";
+GRANT SELECT, INSERT ON call_log TO "www-data";
 GRANT SELECT, UPDATE ON call_log_id_seq TO "www-data";
-GRANT SELECT, INSERT, UPDATE, DELETE ON humans TO "www-data";
+
+-- allow adding humans and modifying existing humans' priorities
+GRANT SELECT, INSERT ON humans TO "www-data";
 GRANT SELECT, UPDATE ON humans_id_seq TO "www-data";
+GRANT UPDATE (priority) ON humans TO "www-data";
+
+-- allow adding and updating messages. Triggers protect the past
 GRANT SELECT, INSERT, UPDATE, DELETE ON messages TO "www-data";
 GRANT SELECT, UPDATE ON messages_id_seq TO "www-data";
