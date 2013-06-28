@@ -52,19 +52,21 @@
         </div>
 
         <div class="container" id="page_{{ request.endpoint }}">
-            {% with messages = get_flashed_messages(with_categories=true) %}
+            <div class="row">
                 <div class="span12">
-                    {% for category, message in messages %}
-                        <div class="alert alert-{{ category }}">
-                            <button type="button" class="close" data-dismiss="alert">&times;</button>
-                            {% if category != message %}
-                                <strong>{{ category|title }}</strong>:
-                            {% endif %}
-                            {{ message }}
-                        </div>
-                    {% endfor %}
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category }}">
+                                <button type="button" class="close" data-dismiss="alert">&times;</button>
+                                {% if category != message %}
+                                    <strong>{{ category|title }}</strong>:
+                                {% endif %}
+                                {{ message }}
+                            </div>
+                        {% endfor %}
+                    {% endwith %}
                 </div>
-            {% endwith %}
+            </div>
 
             {% if page_title %}
                 <div class="row">
