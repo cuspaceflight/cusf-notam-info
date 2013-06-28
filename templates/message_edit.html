@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% if id == none %}
+    {% set page_title = "New message" %}
+{% else %}
+    {% set page_title = "Edit message" %}
+{% endif %}
+
+{% if active_when is not defined %}
+    {# else Jinja gets sad (with good reason) at active_when.lower #}
+    {% set active_when = {"lower": "", "upper": ""} %}
+{% endif %}
+
+{% block content %}
+    <div class="row">
+        <div class="span12">
+            <form method="POST" action="{{ url_for(request.endpoint, message_id=id) }}" class="form-horizontal">
+                {{ csrf_token_input() }}
+
+                {% macro control_group(name, label, caller) %}
+                    <div class="control-group">
+                        <label class="control-label" for="{{ name }}">{{ label }}</label>
+                        <div class="controls">
+                            {{ caller() }}
+                        </div>
+                    </div>
+                {% endmacro %}
+
+                {% macro input_text(name, label, value, extra='', class='input-large') %}
+                    {% call control_group(name, label) %}
+                        <input type="text" id="{{ name }}" name="{{ name }}" class="{{ class }}"
+                               value="{{ request.form.get(name, value) }}" {{ extra|safe }} required>
+                    {% endcall %}
+                {% endmacro %}
+
+                {{ input_text("short_name", "Name", short_name, class="input-large") }}
+
+                {% set datetime_pattern = 'placeholder="YYYY-MM-DD HH:MM:SS" required pattern="\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d"' %}
+                {{ input_text("active_when_lower", "Active from", active_when.lower, extra=datetime_pattern) }}
+                {{ input_text("active_when_upper", "... until", active_when.upper, extra=datetime_pattern) }}
+
+                {{ input_text("web_short_text", "Widget text", web_short_text, class="input-large") }}
+                {% call control_group("web_long_text", "Launch page text") %}
+                    <textarea id="web_long_text" name="web_long_text" class="input-xxlarge" rows="4" required>
+                        {{- request.form.get('web_long_text', web_long_text) -}}
+                    </textarea>
+                {% endcall %}
+
+                <div class="control-group">
+                    <div class="controls">
+                        <button class="btn" type="submit"><i class="icon-ok"></i> Save</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+{% endblock %}

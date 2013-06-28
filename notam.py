@@ -5,6 +5,7 @@ import smtplib
 import time
 import re
 import random
+import datetime
 from psycopg2.pool import ThreadedConnectionPool
 import psycopg2.extras
 
@@ -265,6 +266,14 @@ def shuffled_humans(seed):
 
     return humans
 
+_message_query = "SELECT m.id, m.active_when, m.short_name, " \
+                 "       m.web_short_text, m.web_long_text, " \
+                 "       m.call_text, m.forward_to, " \
+                 "       h.name AS forward_name, h.phone AS forward_phone, " \
+                 "       LOCALTIMESTAMP <@ active_when AS active " \
+                 "FROM messages AS m " \
+                 "LEFT OUTER JOIN humans AS h ON m.forward_to = h.id "
+
 def active_message():
     """
     Get the active message, if it exists.
@@ -272,16 +281,11 @@ def active_message():
     Returns a {"id": i, "active_when": a, "short_name": s,
     "web_short_text": wst, "web_long_text": wlt, "call_text": ct,
     "forward_to": human_id, "forward_name": human_name,
-    "forward_phone": human_phone} dict,
+    "forward_phone": human_phone, "active": bool} dict,
     or None if there isn't an active message.
     """
 
-    query = "SELECT m.id, m.active_when, m.short_name, " \
-            "       m.web_short_text, m.web_long_text, " \
-            "       m.call_text, m.forward_to, " \
-            "       h.name AS forward_name, h.phone AS forward_phone " \
-            "FROM messages AS m " \
-            "LEFT OUTER JOIN humans AS h ON m.forward_to = h.id " \
+    query = _message_query + \
             "WHERE LOCALTIMESTAMP <@ active_when"
 
     with cursor(True) as cur:
@@ -300,13 +304,7 @@ def future_messages():
     Returns a list of messages in the same form as active_message()
     """
 
-    query = "SELECT m.id, m.active_when, m.short_name, " \
-            "       m.web_short_text, m.web_long_text, " \
-            "       m.call_text, m.forward_to, " \
-            "       h.name AS forward_name, h.phone AS forward_phone, " \
-            "       LOCALTIMESTAMP <@ active_when AS active " \
-            "FROM messages AS m " \
-            "LEFT OUTER JOIN humans AS h ON m.forward_to = h.id " \
+    query = _message_query + \
             "WHERE TSRANGE(LOCALTIMESTAMP, NULL) && active_when " \
             "ORDER BY active_when"
 
@@ -316,6 +314,20 @@ def future_messages():
     with cursor(True) as cur:
         cur.execute(query)
         return cur.fetchall()
+
+def get_message(message_id):
+    """
+    Gets a specific message by its id
+
+    Returns a dict in the same form as active_message()
+    """
+
+    query = _message_query + \
+            "WHERE m.id = %s"
+
+    with cursor(True) as cur:
+        cur.execute(query, (message_id, ))
+        return cur.fetchone()
 
 def do_delete_message(message_id):
     query = "DELETE FROM messages WHERE id = %s"
@@ -495,9 +507,20 @@ def list_messages():
 
     return render_template("messages.html", messages=messages)
 
-@app.route("/messages/<int:message>/edit")
-def edit_message(message):
-    return 'Edit {0}'.format(message)
+@app.route("/messages/new")
+@app.route("/messages/<int:message_id>/edit")
+def edit_message(message_id=None):
+    if message_id is None:
+        default_date = datetime.datetime.today() \
+                .replace(hour=0, minute=0, second=0, microsecond=0)
+        active_when = {"lower": default_date, "upper": default_date}
+        message = {"id": None, "active_when": active_when}
+    else:
+        message = get_message(message_id)
+        if message is None:
+            abort(404)
+
+    return render_template("message_edit.html", **message)
 
 @app.route("/messages/<int:message>/delete", methods=["POST"])
 def delete_message(message):

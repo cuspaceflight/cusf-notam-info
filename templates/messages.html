@@ -9,7 +9,7 @@
                     <thead>
                         <tr>
                             <td class="message_buttons">
-                                <a class="btn btn-mini btn-warning" href="{{ url_for("edit_message", message=message.id) }}">
+                                <a class="btn btn-mini btn-warning" href="{{ url_for("edit_message", message_id=message.id) }}">
                                     <i class="icon-pencil icon-white"></i> Edit
                                 </a>
                                 <form method="POST" action="{{ url_for("delete_message", message=message.id) }}">

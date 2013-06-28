@@ -50,7 +50,8 @@ CREATE TABLE messages (
         CHECK (LOWER_INF(active_when) = FALSE AND
                UPPER_INF(active_when) = FALSE),
     CONSTRAINT active_when_closed_open
-        CHECK (LOWER_INC(active_when) = TRUE AND
+        CHECK (ISEMPTY(active_when) = FALSE AND
+               LOWER_INC(active_when) = TRUE AND
                UPPER_INC(active_when) = FALSE),
     CONSTRAINT forward_xor_text
         CHECK ((call_text IS NULL) = (forward_to IS NOT NULL))
