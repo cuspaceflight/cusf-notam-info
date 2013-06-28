@@ -36,6 +36,13 @@ h1 {
     margin: 0;
 }
 
+#page_list_messages #header {
+    margin-bottom: 20px;
+}
+#page_list_messages #header span {
+    margin-top: 4px;
+    display: inline-block;
+}
 #page_list_messages .message_buttons {
     text-align: center;
     width: 200px;

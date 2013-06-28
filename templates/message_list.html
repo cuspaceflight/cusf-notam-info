@@ -1,7 +1,25 @@
 {% extends "base.html" %}
+{% from "pagination.html" import pagination %}
+
 {% set page_title = "Messages" %}
 
 {% block content %}
+    {% if page %}
+        <div class="row">
+            <div class="span12">
+                {{ pagination(page, pages) }}
+            </div>
+        </div>
+    {% endif %}
+
+    <div class="row">
+        <div class="span12" id="header">
+            <span>Note that all times are UTC.</span>
+
+            <a href="{{ url_for("edit_message") }}" class="btn btn-primary pull-right" id="add_message">Add Message</a>
+        </div>
+    </div>
+
     <div class="row">
         <div class="span12" id="messages">
             {% for message in messages %}
@@ -9,16 +27,21 @@
                     <thead>
                         <tr>
                             <td class="message_buttons">
-                                <a class="btn btn-mini btn-warning" href="{{ url_for("edit_message", message_id=message.id) }}">
-                                    <i class="icon-pencil icon-white"></i> Edit
-                                </a>
-                                <form method="POST" action="{{ url_for("delete_message", message=message.id) }}">
-                                    <input type="hidden" name="message" value="message.id">
-                                    {{ csrf_token_input() }}
-                                    <button class="btn btn-mini btn-danger">
-                                        <i class="icon-remove icon-white"></i> Delete
-                                    </button>
-                                </form>
+                                {% if message.active_when.upper > datetime_now() %}
+                                    <a class="btn btn-mini btn-warning" href="{{ url_for("edit_message", message_id=message.id) }}">
+                                        <i class="icon-pencil icon-white"></i> Edit
+                                    </a>
+                                {% endif %}
+
+                                {% if message.active_when.lower > datetime_now() %}
+                                    <form method="POST" action="{{ url_for("delete_message", message=message.id) }}">
+                                        <input type="hidden" name="message" value="message.id">
+                                        {{ csrf_token_input() }}
+                                        <button class="btn btn-mini btn-danger">
+                                            <i class="icon-remove icon-white"></i> Delete
+                                        </button>
+                                    </form>
+                                {% endif %}
                             </td>
                             <th class="message_header">
                                 &ldquo;{{ message.short_name }}&rdquo;
@@ -61,6 +84,18 @@
                     </tbody>
                 </table>
             {% endfor %}
+
+            {% if not messages %}
+                <p>No messages (ever!)</p>
+            {% endif %}
         </div>
     </div>
+
+    {% if page and messages|length > 3 %}
+        <div class="row">
+            <div class="span12">
+                {{ pagination(page, pages) }}
+            </div>
+        </div>
+    {% endif %}
 {% endblock %}

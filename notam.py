@@ -295,33 +295,39 @@ def active_message():
         else:
             raise AssertionError("cur.rowcount should be 0 or 1")
 
-def future_messages():
+def messages_count():
+    """Count the rows in the messages table"""
+
+    query = "SELECT COUNT(*) AS count FROM messages"
+
+    with cursor() as cur:
+        cur.execute(query)
+        return cur.fetchone()[0]
+
+def all_messages(offset, limit=5):
     """
-    Get all messages that are active now or will be active in the future
+    Get all messages
 
     Returns a list of messages in the same form as active_message()
     """
 
     query = _message_query + \
-            "WHERE TSRANGE(LOCALTIMESTAMP, NULL) && active_when " \
-            "ORDER BY active_when"
+            "ORDER BY active_when " \
+            "OFFSET %s LIMIT %s"
 
-    # intersecting with [localtimestamp, infinity) uses the index;
-    # LOCALTIMESTAMP < UPPER(active_when) does not.
 
     with cursor(True) as cur:
-        cur.execute(query)
+        cur.execute(query, (offset, limit))
         return cur.fetchall()
 
 def get_message(message_id):
     """
     Gets a specific message by its id
 
-    Returns a dict in the same form as active_message()
+    Returns all columns, as a dict.
     """
 
-    query = _message_query + \
-            "WHERE m.id = %s"
+    query = "SELECT * FROM messages WHERE id = %s"
 
     with cursor(True) as cur:
         cur.execute(query, (message_id, ))
@@ -432,6 +438,11 @@ def show_which_pages_responsive(page, pages, phone=5, tablet=7, desktop=11):
             return 'hidden-phone hidden-tablet'
 
     return [(page, page_class(page)) for page in all_pages]
+
+@app.template_global('datetime_now')
+def datetime_now():
+    return datetime.datetime.now()
+
 
 ## Views
 
@@ -553,8 +564,34 @@ def edit_humans():
             lowest_priorities=lowest_priorities)
 
 @app.route("/messages")
-def list_messages():
-    messages = future_messages()
+@app.route("/messages/<int:page>")
+def list_messages(page=None):
+    page_size = 5
+    count = messages_count()
+
+    if count == 0:
+        if page is not None:
+            abort(404)
+        else:
+            return render_template("message_list.html")
+
+    pages = count / page_size
+    if count % page_size:
+        pages += 1
+
+    if page is None:
+        return redirect(url_for(request.endpoint, page=pages))
+
+    if page > pages or page < 1:
+        abort(404)
+
+    offset = (page - 1) * page_size
+
+    if offset == 0:
+        messages = all_messages(offset, page_size)
+    else:
+        # so we can calculate gap_preceeding. It's dropped later
+        messages = all_messages(offset - 1, page_size + 1)
 
     last_upper = None
     for message in messages:
@@ -566,11 +603,14 @@ def list_messages():
 
         last_upper = message["active_when"].upper
 
+    if offset != 0:
+        messages = messages[1:]
+
     return render_template("message_list.html", messages=messages,
             page=page, pages=pages)
 
-@app.route("/messages/new")
-@app.route("/messages/<int:message_id>/edit")
+@app.route("/messages/new", methods=["GET"])
+@app.route("/message/<int:message_id>/edit", methods=["GET"])
 def edit_message(message_id=None):
     if message_id is None:
         default_date = datetime.datetime.today() \
@@ -584,7 +624,7 @@ def edit_message(message_id=None):
 
     return render_template("message_edit.html", **message)
 
-@app.route("/messages/<int:message>/delete", methods=["POST"])
+@app.route("/message/<int:message>/delete", methods=["POST"])
 def delete_message(message):
     check_csrf_token()
     do_delete_message(message)
