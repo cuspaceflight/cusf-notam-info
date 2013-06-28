@@ -10,6 +10,7 @@ app.config['POSTGRES'] = "dbname=cusf-notam-info"
 app.config['EMAIL_TO'] = ["main@danielrichman.co.uk"]
 app.config['EMAIL_FROM'] = "cusf-notam-info@yocto.danielrichman.co.uk"
 app.config['EMAIL_SERVER'] = "localhost"
+app.config['TRAP_BAD_REQUEST_ERRORS'] = True
 
 handler = logging.StreamHandler()
 handler.setLevel(logging.DEBUG)
