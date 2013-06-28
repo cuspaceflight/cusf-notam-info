@@ -66,7 +66,7 @@ function widget_launch($args)
         echo $after_widget;
     }
 }
- 
+
 function launch_init()
 {
     register_sidebar_widget(__('Launch Announcement'), 'widget_launch');

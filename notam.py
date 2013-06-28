@@ -21,12 +21,10 @@ postgres_pool = None
 
 @app.before_first_request
 def setup_postgres_pool():
-    """
-    Initialise the postgres connection pool
+    """Initialise the postgres connection pool"""
 
-    Happens "before_first_request" rather than at module init since app.config
-    could change
-    """
+    # Happens "before_first_request" rather than at module init since
+    # app.config could change
 
     global postgres_pool
     postgres_pool = ThreadedConnectionPool(1, 10, app.config["POSTGRES"])
@@ -99,7 +97,7 @@ def call_log(message):
     assert flask.has_request_context()
 
     sid = get_sid()
-    call_logger.info("{0} {1}".format(sid, message))
+    call_logger.info("%s %s", sid, message)
 
     db_msg = message.encode('ascii', 'replace')
 
@@ -129,7 +127,7 @@ def get_call_sid(call_id):
 def get_call_log_for_id(call_id, return_dicts=False):
     """
     Get the whole call log for a given call id
-    
+
     If return_dicts is false, a list of (time, message) tuples is returned;
     if true {"time": time, "message": message} dicts.
     """
@@ -145,7 +143,7 @@ def get_call_log_for_id(call_id, return_dicts=False):
 def get_call_log_for_sid(sid=None, return_dicts=False):
     """
     Get the whole call log for a given call SID
-    
+
     If no SID is specified, it will use the SID from the current request.
 
     If return_dicts is false, a list of (time, message) tuples is returned;
@@ -166,7 +164,7 @@ def get_call_log_for_sid(sid=None, return_dicts=False):
 def calls_count():
     """Count the rows in the calls table"""
 
-    query = "SELECT count(*) AS count FROM calls"
+    query = "SELECT COUNT(*) AS count FROM calls"
 
     with cursor() as cur:
         cur.execute(query)
@@ -175,7 +173,7 @@ def calls_count():
 def call_log_first_lines(offset=0, limit=100):
     """
     Get a list of calls and for each, their first lines in the call log
-    
+
     A list of {"call": call_id, "first_time": time, "first_message": message}
     dicts is returned.
     """
@@ -196,7 +194,7 @@ def call_log_first_lines(offset=0, limit=100):
 def email(subject, message):
     """Send an email"""
 
-    logger.debug("email: {0} {1!r}".format(subject, message))
+    logger.debug("email: %s %r", subject, message)
 
     email = "From: {0}\r\nTo: {1}\r\nSubject: CUSF Notam Twilio {2}\r\n\r\n" \
         .format(app.config['EMAIL_FROM'], ",".join(app.config['EMAIL_TO']),
@@ -213,7 +211,7 @@ def email(subject, message):
 def all_humans():
     """
     Get all humans, sorted by priority then name
-    
+
     A list of {"id": id, "name": name, "phone": phone, "priority": priority}
     dicts is returned.
     """
@@ -277,7 +275,7 @@ _message_query = "SELECT m.id, m.active_when, m.short_name, " \
 def active_message():
     """
     Get the active message, if it exists.
-    
+
     Returns a {"id": i, "active_when": a, "short_name": s,
     "web_short_text": wst, "web_long_text": wlt, "call_text": ct,
     "forward_to": human_id, "forward_name": human_name,
@@ -330,6 +328,7 @@ def get_message(message_id):
         return cur.fetchone()
 
 def do_delete_message(message_id):
+    """Delete message by id"""
     query = "DELETE FROM messages WHERE id = %s"
     with cursor() as cur:
         cur.execute(query, (message_id, ))
@@ -369,6 +368,7 @@ def check_csrf_token():
 
 @app.before_request
 def auto_check_csrf():
+    """Automatically check the CSRF token whenever data is POSTed"""
     if request.form:
         check_csrf_token()
 
@@ -551,7 +551,7 @@ def web_status():
 def sms():
     sms_from = request.form["From"]
     sms_msg = request.form["Body"]
-    logger.info("SMS From {0}: {1!r}".format(sms_from, sms_msg))
+    logger.info("SMS From %s: %r", sms_from, sms_msg)
 
     r = twiml.Response()
     return str(r)
@@ -646,7 +646,7 @@ def dial(r, seed, index):
 
     # Make callerId be our Twilio number so people know why they're being
     # called at 7am before they pick up
-    pickup_url = url_for("call_human_pickup", seed=seed, index=index, 
+    pickup_url = url_for("call_human_pickup", seed=seed, index=index,
                          parent_sid=get_sid())
     d = r.dial(action=url_for("call_human_ended", seed=seed, index=index),
                callerId=request.form["To"])
