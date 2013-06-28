@@ -27,7 +27,7 @@
                                 <td>{{ human.name }}</td>
                                 <td>{{ human.phone }}</td>
                                 <td><input name="priority_{{ human.id }}" class="input-mini" type="text"
-                                           value="{{ request.form.get("priority_{0}".format(human.id), human.priority) }}"
+                                           value="{{ human.priority }}"
                                            required pattern="0|[1-9][0-9]*" maxlength="4"></td>
                             </tr>
                         {% endfor %}
@@ -44,6 +44,7 @@
                 <input type="hidden" name="add_human" value="true">
                 {{ csrf_token_input() }}
 
+                {# get values from request.form in case of 'name/phone must be unique' error #}
                 <input class="input-medium" type="text" placeholder="Name"
                        name="name" required maxlength="50"
                        value="{{ request.form.name }}">

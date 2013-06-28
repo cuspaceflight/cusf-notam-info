@@ -8,6 +8,7 @@ import random
 import datetime
 from psycopg2.pool import ThreadedConnectionPool
 import psycopg2.extras
+import psycopg2.errorcodes
 
 from flask import request, url_for, redirect, render_template, \
                   Markup, jsonify, abort, flash, session
@@ -514,8 +515,9 @@ def edit_humans():
                     changed += 1
 
         except psycopg2.DataError:
-            flash('Priority must be in range 0-32767', 'error')
             connection().rollback()
+            logger.warning("PostgreSQL error", exc_info=True)
+            abort(400)
 
         else:
             if changed:
@@ -535,13 +537,20 @@ def edit_humans():
 
         try:
             add_human(name, phone, priority)
-        except psycopg2.IntegrityError:
-            flash('Invalid data: name and phone must be nonempty, unique, '
-                  'phone of form "+NNNNNNNNNNNN"', 'error')
+
+        except psycopg2.IntegrityError as e:
             connection().rollback()
+            if e.pgcode == psycopg2.errorcodes.UNIQUE_VIOLATION:
+                flash('Name and phone must be unique', 'error')
+            else:
+                logger.warning("PostgreSQL error", exc_info=True)
+                abort(400)
+
         except psycopg2.DataError:
-            flash('Priority must be in range 0-32767', 'error')
             connection().rollback()
+            logger.warning("PostgreSQL error", exc_info=True)
+            abort(400)
+
         else:
             flash('Human added', 'success')
             return redirect(url_for(request.endpoint))
@@ -627,8 +636,18 @@ def edit_message(message_id=None):
 @app.route("/message/<int:message>/delete", methods=["POST"])
 def delete_message(message):
     check_csrf_token()
-    do_delete_message(message)
-    flash("Message deleted", "success")
+
+    try:
+        do_delete_message(message)
+    except psycopg2.InternalError as e:
+        connection().rollback()
+        if e.pgcode != psycopg2.errorcodes.RAISE_EXCEPTION:
+            raise
+
+        flash('Delete forbidden: {0}'.format(e.diag.message_primary), 'error')
+    else:
+        flash("Message deleted", "success")
+
     return redirect(url_for('list_messages'))
 
 @app.route("/heartbeat")
