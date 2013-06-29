@@ -4,97 +4,92 @@
 {% set page_title = "Messages" %}
 
 {% block content %}
-    {% if page %}
-        <div class="row">
-            <div class="span12">
-                {{ pagination(page, pages) }}
-            </div>
-        </div>
-    {% endif %}
-
     <div class="row">
-        <div class="span12" id="header">
-            <span>Note that all times are UTC.</span>
+        <div class="span12">
+            {% if page %}
+                <section id="pagination_before">
+                    {{ pagination(page, pages) }}
+                </section>
+            {% endif %}
 
-            <a href="{{ url_for("edit_message", return_to=page) }}" class="btn btn-primary pull-right" id="add_message">Add Message</a>
-        </div>
-    </div>
+            <section id="header">
+                <span>Note that all times are UTC.</span>
+                <a href="{{ url_for("edit_message", return_to=page) }}" class="btn btn-primary pull-right" id="add_message">Add Message</a>
+            </section>
 
-    <div class="row">
-        <div class="span12" id="messages">
-            {% for message in messages %}
-                <table class="table table-bordered table-hover">
-                    <thead>
-                        <tr>
-                            <td class="message_buttons">
-                                {% if message.active_when.upper > datetime_now() %}
-                                    <a class="btn btn-mini btn-warning" href="{{ url_for("edit_message", message_id=message.id, return_to=page) }}">
-                                        <i class="icon-pencil icon-white"></i> Edit
-                                    </a>
-                                {% endif %}
-
-                                {% if message.active_when.lower > datetime_now() %}
-                                    <form method="POST" action="{{ url_for("delete_message", message=message.id, return_to=page) }}">
-                                        {{ csrf_token_input() }}
-                                        <button class="btn btn-mini btn-danger">
-                                            <i class="icon-remove icon-white"></i> Delete
-                                        </button>
-                                    </form>
-                                {% endif %}
-                            </td>
-                            <th class="message_header">
-                                &ldquo;{{ message.short_name }}&rdquo;
-                            </th>
-                        </tr>
-                    </thead>
-
-                    <tbody>
-                        {% macro message_attr(key, value) %}
+            <section id="messages">
+                {% for message in messages %}
+                    <table class="table table-bordered table-hover">
+                        <thead>
                             <tr>
-                                <th>{{ key }}</th>
-                                <td>{{ value }}</td>
+                                <td class="message_buttons">
+                                    {% if message.active_when.upper > datetime_now() %}
+                                        <a class="btn btn-mini btn-warning" href="{{ url_for("edit_message", message_id=message.id, return_to=page) }}">
+                                            <i class="icon-pencil icon-white"></i> Edit
+                                        </a>
+                                    {% endif %}
+
+                                    {% if message.active_when.lower > datetime_now() %}
+                                        <form method="POST" action="{{ url_for("delete_message", message=message.id, return_to=page) }}">
+                                            {{ csrf_token_input() }}
+                                            <button class="btn btn-mini btn-danger">
+                                                <i class="icon-remove icon-white"></i> Delete
+                                            </button>
+                                        </form>
+                                    {% endif %}
+                                </td>
+                                <th class="message_header">
+                                    &ldquo;{{ message.short_name }}&rdquo;
+                                </th>
                             </tr>
-                        {% endmacro %}
+                        </thead>
 
-                        <tr>
-                            <th>Active</th>
-                            <td>
-                                {{ message.active_when.lower }} &ndash; {{ message.active_when.upper }}
-                                {% if message.active %}
-                                    <i class="text-info">(active now)</i>
-                                {% elif message.gap_preceeding %}
-                                    <i class="text-warning">(gap preceeding)</i>
-                                {% endif %}
-                                {% set last_upper = message.active_when.upper %}
-                            </td>
-                        </tr>
+                        <tbody>
+                            {% macro message_attr(key, value) %}
+                                <tr>
+                                    <th>{{ key }}</th>
+                                    <td>{{ value }}</td>
+                                </tr>
+                            {% endmacro %}
 
-                        {{ message_attr("Widget text", message.web_short_text) }}
-                        {{ message_attr("Launches page text", message.web_long_text) }}
-
-                        {% if message.call_text %}
-                            {{ message_attr("Twilio call text", message.call_text) }}
-                        {% else %}
                             <tr>
-                                <th>Immediately forward calls to</th>
-                                <td>&ldquo;{{ message.forward_name }}&rdquo; on {{ message.forward_phone }}</td>
+                                <th>Active</th>
+                                <td>
+                                    {{ message.active_when.lower }} &ndash; {{ message.active_when.upper }}
+                                    {% if message.active %}
+                                        <i class="text-info">(active now)</i>
+                                    {% elif message.gap_preceeding %}
+                                        <i class="text-warning">(gap preceeding)</i>
+                                    {% endif %}
+                                    {% set last_upper = message.active_when.upper %}
+                                </td>
                             </tr>
-                        {% endif %}
-                    </tbody>
-                </table>
-            {% endfor %}
 
-            {% if not messages %}
-                <p>No messages (ever!)</p>
+                            {{ message_attr("Widget text", message.web_short_text) }}
+                            {{ message_attr("Launches page text", message.web_long_text) }}
+
+                            {% if message.call_text %}
+                                {{ message_attr("Twilio call text", message.call_text) }}
+                            {% else %}
+                                <tr>
+                                    <th>Immediately forward calls to</th>
+                                    <td>&ldquo;{{ message.forward_name }}&rdquo; on {{ message.forward_phone }}</td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                {% endfor %}
+
+                {% if not messages %}
+                    <p>No messages (ever!)</p>
+                {% endif %}
+            </section>
+
+            {% if page and messages|length > 3 %}
+                <section id="pagination_after">
+                    {{ pagination(page, pages) }}
+                </section>
             {% endif %}
         </div>
     </div>
-
-    {% if page and messages|length > 3 %}
-        <div class="row">
-            <div class="span12">
-                {{ pagination(page, pages) }}
-            </div>
-        </div>
-    {% endif %}
 {% endblock %}
