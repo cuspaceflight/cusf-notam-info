@@ -512,9 +512,16 @@ def show_which_pages_responsive(page, pages, phone=5, tablet=7, desktop=11):
 
 @app.template_global('datetime_now')
 def datetime_now():
+    """Return now(), for templates"""
     return datetime.datetime.now()
 
 def default_active_when():
+    """
+    Return a default DateTimeRange to popualate new message row forms
+
+    The lower bound is tomorrow at midnight, the upper is the midnight after.
+    """
+
     today = datetime.datetime.now() \
             .replace(hour=0, minute=0, second=0, microsecond=0)
     days = lambda n: datetime.timedelta(days=n)
