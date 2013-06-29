@@ -351,46 +351,56 @@ def upsert_message(message):
     query1 = "WITH " \
              "deleted AS ( " \
              "    DELETE FROM messages " \
-             "    WHERE id != %(id)s AND active_when <@ %(n)s " \
-             "    RETURNING id, short_name, 'delete'::TEXT AS action " \
+             "    WHERE {0} active_when <@ %(n)s " \
+             "    RETURNING 'delete'::TEXT AS action, " \
+             "        short_name, active_when "\
              "), " \
              "end_earlier AS ( " \
              "    UPDATE messages " \
              "    SET active_when = " \
              "        TSRANGE(LOWER(active_when), LOWER(%(n)s)) " \
-             "    WHERE id != %(id)s AND NOT active_when <@ %(n)s AND " \
+             "    WHERE {0} NOT active_when <@ %(n)s AND " \
              "        active_when && %(n)s AND active_when < %(n)s " \
-             "    RETURNING id, short_name, 'end_earlier'::TEXT AS action " \
+             "    RETURNING 'end_earlier'::TEXT AS action, " \
+             "        short_name, active_when "\
              "), " \
              "start_later AS ( "\
              "    UPDATE messages " \
              "    SET active_when = " \
              "        TSRANGE(UPPER(%(n)s), UPPER(active_when)) " \
-             "    WHERE id != %(id)s AND NOT active_when <@ %(n)s AND " \
+             "    WHERE {0} NOT active_when <@ %(n)s AND " \
              "        active_when && %(n)s AND active_when > %(n)s " \
-             "    RETURNING id, short_name, 'start_later'::TEXT AS action " \
+             "    RETURNING 'start_later'::TEXT AS action, " \
+             "        short_name, active_when "\
              ") " \
-             "SELECT * FROM deleted " \
-             "UNION SELECT * FROM end_earlier " \
-             "UNION SELECT * FROM start_later"
+             "SELECT action, short_name, active_when FROM deleted " \
+             "UNION SELECT action, short_name, active_when FROM end_earlier " \
+             "UNION SELECT action, short_name, active_when FROM start_later " \
+             "ORDER BY active_when"
+
+    query1_existing = query1.format("id != %(id)s AND ")
+    query1_new = query1.format("")
 
     columns = ("short_name", "web_short_text", "web_long_text",
                "call_text", "forward_to", "active_when")
 
-    query2 = "UPDATE messages SET {0} WHERE id = %(id)s" \
+    query2_existing = "UPDATE messages SET {0} WHERE id = %(id)s" \
              .format(','.join('{0} = %({0})s'.format(c) for c in columns))
-    query3 = "INSERT INTO messages ({0}) VALUES ({1})" \
-             .format(','.join(columns), ','.join(('%s', ) * len(columns)))
+    query2_new = "INSERT INTO messages ({0}) VALUES ({1})" \
+             .format(','.join(columns),
+                     ','.join('%({0})s'.format(c) for c in columns))
 
-    with cursor(True) as cur:
+    new = message.get("id", None) is None
+    query1 = query1_new if new else query1_existing
+    query2 = query2_new if new else query2_existing
+
+    with cursor() as cur:
         params = {"n": message["active_when"], "id": message.get("id", None)}
         cur.execute(query1, params)
-        moved_messages = cur.fetchall()
 
-        if message.get("id", None) is not None:
-            cur.execute(query2, message)
-        else:
-            cur.execute(query3, message)
+        moved_messages = [(action, short_name)
+                for action, short_name, active_when in cur.fetchall()]
+        cur.execute(query2, message)
 
     return moved_messages
 
@@ -775,10 +785,7 @@ def edit_message_save(message_id=None):
         return render_template("message_edit.html", return_to=return_to,
                                humans=all_humans(), **message)
 
-    for moved_message in moved_messages:
-        action = moved_message["action"]
-        name = moved_message["short_name"]
-
+    for action, name in moved_messages:
         if action == "delete":
             flash('Deleted message "{0}" since {1} message '
                   'completely covers it.'.format(name, new_type),
