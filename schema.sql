@@ -57,6 +57,10 @@ CREATE TABLE messages (
         CHECK (ISEMPTY(active_when) = FALSE AND
                LOWER_INC(active_when) = TRUE AND
                UPPER_INC(active_when) = FALSE),
+    CONSTRAINT active_when_integer_seconds
+        CHECK (DATE_TRUNC('SECOND', LOWER(active_when)) = LOWER(active_when)
+               AND
+               DATE_TRUNC('SECOND', UPPER(active_when)) = UPPER(active_when)),
     CONSTRAINT forward_xor_text
         CHECK ((call_text IS NULL) = (forward_to IS NOT NULL))
 );
