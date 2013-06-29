@@ -8,6 +8,15 @@
 
                 {% if message %}
                     <table class="table table-bordered table-hover">
+                        <thead>
+                            <tr>
+                                <td></td>
+                                <th class="message_header">
+                                    &ldquo;{{ message.short_name }}&rdquo;
+                                </th>
+                            </tr>
+                        </thead>
+
                         <tbody>
                             {% macro message_attr(key, value) %}
                                 <tr>
@@ -16,7 +25,6 @@
                                 </tr>
                             {% endmacro %}
 
-                            {{ message_attr("Name", message.short_name) }}
                             {{ message_attr("Widget text", message.web_short_text) }}
                             {{ message_attr("Launches page text", message.web_long_text) }}
                             {% if message.call_text %}

@@ -2,6 +2,10 @@ h1 {
     margin-bottom: 20px;
     text-align: center;
 }
+.message_header {
+    text-align: center !important;
+    font-size: 150%;
+}
 
 #page_home #management p {
     text-align: center;
@@ -61,10 +65,6 @@ h1 {
     #page_list_messages .message_buttons {
         width: 85px;
     }
-}
-#page_list_messages .message_header {
-    text-align: center;
-    font-size: 150%;
 }
 
 #page_edit_message .control-group.gap_after {
