@@ -6,6 +6,9 @@ h1 {
     text-align: center !important;
     font-size: 150%;
 }
+.pagination .page_number {
+    width: 25px;
+}
 
 #page_home #management p {
     text-align: center;
@@ -14,9 +17,6 @@ h1 {
     margin-bottom: 40px;
 }
 
-#page_log_viewer .pagination .page_number {
-    width: 25px;
-}
 #page_log_viewer .call_id {
     font-family: monospace;
 }
