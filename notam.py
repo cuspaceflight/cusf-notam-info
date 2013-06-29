@@ -529,6 +529,13 @@ def default_active_when():
     upper = today + days(2)
     return psycopg2.extras.DateTimeRange(lower, upper, bounds='[)')
 
+def intbrq(value):
+    """Return int(value) or abort(400) if it fails (by ValueError)"""
+    try:
+        return int(value)
+    except:
+        abort(400)
+
 
 ## Views
 
@@ -594,7 +601,7 @@ def edit_humans():
         try:
             for human in all_humans():
                 field_name = "priority_{0}".format(human["id"])
-                new_priority = int(request.form[field_name])
+                new_priority = intbrq(request.form[field_name])
                 if human["priority"] != new_priority:
                     update_human_priority(human["id"], new_priority)
                     changed += 1
@@ -618,7 +625,7 @@ def edit_humans():
     elif request.form.get("add_human", False):
         name = request.form["name"]
         phone = request.form["phone"]
-        priority = int(request.form["priority"])
+        priority = intbrq(request.form["priority"])
 
         try:
             add_human(name, phone, priority)
@@ -738,7 +745,7 @@ def edit_message_save(message_id=None):
     if message["forward_to"] == "":
         message["forward_to"] = None
     else:
-        message["forward_to"] = int(message["forward_to"])
+        message["forward_to"] = intbrq(message["forward_to"])
 
     parse = lambda s: datetime.datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
 
