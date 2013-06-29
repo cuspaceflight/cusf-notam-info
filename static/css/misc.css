@@ -2,12 +2,15 @@ h1 {
     margin-bottom: 20px;
     text-align: center;
 }
-.message_header {
+.message_neader {
     text-align: center !important;
     font-size: 150%;
 }
 .pagination .page_number {
     width: 25px;
+}
+select#forward_to {
+    width: auto;
 }
 
 #page_home #management p {
@@ -43,7 +46,7 @@ h1 {
 #page_list_messages #header {
     margin-bottom: 20px;
 }
-#page_list_messages #header span {
+#page_list_messages #header #utc_note {
     margin-top: 4px;
     display: inline-block;
 }
@@ -69,7 +72,4 @@ h1 {
 
 #page_edit_message .control-group.gap_after {
     margin-bottom: 30px;
-}
-#page_edit_message select {
-    width: auto;
 }

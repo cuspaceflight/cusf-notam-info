@@ -7,7 +7,7 @@ import re
 import random
 import datetime
 from psycopg2.pool import ThreadedConnectionPool
-import psycopg2.extras
+from psycopg2.extras import DateTimeRange, RealDictCursor
 import psycopg2.errorcodes
 
 from flask import request, url_for, redirect, render_template, \
@@ -56,11 +56,11 @@ def cursor(real_dict_cursor=False):
 
     The connection is committed and closed at the end of the request.
 
-    If real_dict_cursor is set, a psycopg2.extras.RealDictCursor is returned
+    If real_dict_cursor is set, a RealDictCursor is returned
     """
 
     if real_dict_cursor:
-        f = psycopg2.extras.RealDictCursor
+        f = RealDictCursor
         return connection().cursor(cursor_factory=f)
     else:
         return connection().cursor()
@@ -334,6 +334,9 @@ def get_message(message_id):
         cur.execute(query, (message_id, ))
         return cur.fetchone()
 
+_message_columns = ("short_name", "web_short_text", "web_long_text",
+                    "call_text", "forward_to", "active_when")
+
 def upsert_message(message):
     """
     Insert or update a message (depending on whether message["id"] is present)
@@ -381,18 +384,13 @@ def upsert_message(message):
     query1_existing = query1.format("id != %(id)s AND ")
     query1_new = query1.format("")
 
-    columns = ("short_name", "web_short_text", "web_long_text",
-               "call_text", "forward_to", "active_when")
-
-    query2_existing = "UPDATE messages SET {0} WHERE id = %(id)s" \
-             .format(','.join('{0} = %({0})s'.format(c) for c in columns))
-    query2_new = "INSERT INTO messages ({0}) VALUES ({1})" \
-             .format(','.join(columns),
-                     ','.join('%({0})s'.format(c) for c in columns))
+    query2 = "UPDATE messages SET {0} WHERE id = %(id)s" \
+             .format(','.join('{0} = %({0})s'.format(c)
+                     for c in _message_columns))
+    # insert query is in insert_message()
 
     new = message.get("id", None) is None
     query1 = query1_new if new else query1_existing
-    query2 = query2_new if new else query2_existing
 
     with cursor() as cur:
         params = {"n": message["active_when"], "id": message.get("id", None)}
@@ -400,9 +398,28 @@ def upsert_message(message):
 
         moved_messages = [(action, short_name)
                 for action, short_name, active_when in cur.fetchall()]
-        cur.execute(query2, message)
+        if new:
+            insert_message(message)
+        else:
+            cur.execute(query2, message)
 
     return moved_messages
+
+def insert_message(message):
+    """
+    Inserts a message.
+
+    Unlike upsert_message, doesn't move other messages out of the way,
+    and won't update an existing message
+    """
+
+    query = "INSERT INTO messages ({0}) VALUES ({1})" \
+             .format(','.join(_message_columns),
+                     ','.join('%({0})s'.format(c)
+                     for c in _message_columns))
+
+    with cursor() as cur:
+        cur.execute(query, message)
 
 def do_delete_message(message_id):
     """Delete message by id"""
@@ -410,10 +427,20 @@ def do_delete_message(message_id):
     with cursor() as cur:
         cur.execute(query, (message_id, ))
 
+def check_active_clear(active_when):
+    """Check there are no messages intersecting with active_when"""
+
+    query = "SELECT count(*) FROM messages WHERE active_when && %s"
+
+    with cursor() as cur:
+        cur.execute(query, (active_when, ))
+        return cur.fetchone()[0] == 0
+
 
 ## Misc
 
 basic_phone_re = re.compile('^\\+[0-9]+$')
+parse_datetime = lambda s: datetime.datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
 
 @app.template_global('csrf_token')
 def csrf_token():
@@ -527,7 +554,13 @@ def default_active_when():
     days = lambda n: datetime.timedelta(days=n)
     lower = today + days(1)
     upper = today + days(2)
-    return psycopg2.extras.DateTimeRange(lower, upper, bounds='[)')
+    return DateTimeRange(lower, upper, bounds='[)')
+
+def default_launch_date():
+    """Returns midday in four days time"""
+    midday = datetime.datetime.now() \
+             .replace(hour=12, minute=0, second=0, microsecond=0)
+    return midday + datetime.timedelta(days=4)
 
 def intbrq(value):
     """Return int(value) or abort(400) if it fails (by ValueError)"""
@@ -535,6 +568,148 @@ def intbrq(value):
         return int(value)
     except:
         abort(400)
+
+def parse_message_edit_form():
+    """
+    Parse message_edit.html's form from request.form into a message dict
+
+    Tolerates:
+     - active_when missing: ignored (the active_when key is ommitted)
+
+    Parse failure actions:
+     - forward_to integer parsing fails: 400 Bad Request (from intbrq)
+     - datetime parse failure: Store active_when as a dict
+       (rather than DateTimeRange) in form
+       {"lower": string, "upper": string} for repopulating the form
+       (attributes vs items is not an issue for jinja2);
+       set message["active_when_invalid"] to true.
+
+    It's up to the caller to check call_text xor forward_to,
+    whether "active_when" is present, and whether active_when_invalid is
+    set, as appropriate.
+    """
+
+    message = {}
+
+    for key in ("short_name", "web_short_text", "web_long_text",
+                "call_text", "forward_to"):
+        message[key] = request.form[key]
+
+    if message["call_text"] == "":
+        message["call_text"] = None
+
+    if message["forward_to"] == "":
+        message["forward_to"] = None
+    else:
+        message["forward_to"] = intbrq(message["forward_to"])
+
+    try:
+        lower = parse_datetime(request.form["active_when_lower"])
+        upper = parse_datetime(request.form["active_when_upper"])
+        if lower >= upper:
+            raise ValueError
+    except KeyError:
+        pass
+    except ValueError:
+        # Note that we could produce a KeyError here if _lower is present
+        # but _upper is not. This is not an issue, since a client sending
+        # only is clearly a bad client and deserves the HTTP 400 it will get.
+        message["active_when"] = {"lower": request.form["active_when_lower"],
+                                  "upper": request.form["active_when_upper"]}
+        message["active_when_invalid"] = True
+    else:
+        message["active_when"] = DateTimeRange(lower, upper, bounds='[)')
+
+    return message
+
+def wizard_ranges(launch_date_unrounded):
+    """
+    Return the active_when ranges to be used by the wizard
+
+    Returns (active_all, active_call_text, active_forward_to) where:
+
+     - active_forward_text runs from 8am on launch day, or 3 hours before the
+       launch (whichever is earlier), until 3 hours after the launch
+     - active_call_text runs from midnight 3 days in advance (round down to
+       midnight) until active_forward_text starts
+     - active_all covers both
+
+    Lower bounds are rounded down, and upper bounds up, to whole hours.
+    """
+
+    hours = lambda n: datetime.timedelta(hours=n)
+
+    launch_date = launch_date_unrounded \
+                  .replace(minute=0, second=0, microsecond=0)
+
+    start_forward_to = min(launch_date - hours(3), launch_date.replace(hour=8))
+
+    end_forward_to = launch_date + hours(3)
+    if launch_date != launch_date_unrounded:
+        end_forward_to += hours(1) # round up
+
+    start_call_text = launch_date.replace(hour=0) - datetime.timedelta(days=3)
+
+    return (DateTimeRange(start_call_text, end_forward_to, bounds='[)'),
+            DateTimeRange(start_call_text, start_forward_to, bounds='[)'),
+            DateTimeRange(start_forward_to, end_forward_to, bounds='[)'))
+
+def wizard_checks(active_all):
+    """
+    Checks if it's safe to run the wizard.
+
+    Checks:
+
+     - If there are messages in the way of the wizard.
+     - If the wizard would try to add messages in the past.
+
+    Returns an error message, or None if everything is OK
+    """
+
+    if active_all.lower < datetime.datetime.now():
+        return "Launch is too close: you'll have to add this manually"
+
+    elif not check_active_clear(active_all):
+        return "There are messages that intersect with the datetime ranges " \
+                "the wizard would want to use: you'll have to add this " \
+                "manually"
+
+    else:
+        return None
+
+def wizard_default_text(launch_date):
+    """Default text to populate the message edit form from a launch_date"""
+    # http://xkcd.com/1205/ ?
+
+    if launch_date.hour < 11:
+        day_time = "Early on", "early on", "early"
+    elif 11 <= launch_date.hour <= 14:
+        day_time = "Midday", "around midday", "around midday on"
+    elif 15 <= launch_date.hour <= 17:
+        day_time = "Afternoon of", "in the afternoon of", "the afternoon of"
+    else:
+        day_time = "Late on", "late on", "late on"
+
+    def ordinal(n):
+        if 11 <= n % 100 <= 13: return "th"
+        elif n % 10 == 1: return "st"
+        elif n % 10 == 2: return "nd"
+        elif n % 10 == 3: return "rd"
+        else: return "th"
+
+    day_name = launch_date.strftime("%A")
+    ordinald = "{0}{1}".format(launch_date.day, ordinal(launch_date.day))
+    date_name = launch_date.strftime("%A {0} %B").format(ordinald)
+
+    message = {"web_short_text": "Launch: {0} {1} {2}"
+                    .format(day_time[0], day_name, ordinald),
+               "web_long_text": "There may be a balloon release, weather "
+                    "depending, {0} {1}. There will be no launches until then."
+                    .format(day_time[1], date_name),
+               "call_text": "We are planning a launch for {0} {1}"
+                    .format(day_time[2], date_name)}
+
+    return message
 
 
 ## Views
@@ -674,7 +849,8 @@ def list_messages(page=None):
         if page is not None:
             abort(404)
         else:
-            return render_template("message_list.html")
+            return render_template("message_list.html",
+                    default_launch_date=default_launch_date())
 
     pages = count / page_size
     if count % page_size:
@@ -708,7 +884,7 @@ def list_messages(page=None):
         messages = messages[1:]
 
     return render_template("message_list.html", messages=messages,
-            page=page, pages=pages)
+            page=page, pages=pages, default_launch_date=default_launch_date())
 
 @app.route("/messages/new", methods=["GET"])
 @app.route("/message/<int:message_id>/edit", methods=["GET"])
@@ -726,8 +902,6 @@ def edit_message(message_id=None):
 @app.route("/messages/new", methods=["POST"])
 @app.route("/message/<int:message_id>/edit", methods=["POST"])
 def edit_message_save(message_id=None):
-    message = {"id": message_id}
-
     if message_id is not None:
         new_type = "edited"
         action_name = "updated"
@@ -735,37 +909,15 @@ def edit_message_save(message_id=None):
         new_type = "new"
         action_name = "added"
 
-    for key in ("short_name", "web_short_text", "web_long_text",
-                "call_text", "forward_to"):
-        message[key] = request.form[key]
+    message = parse_message_edit_form()
+    if "active_when" not in message:
+        abort(400)
+    message["id"] = message_id
 
-    if message["call_text"] == "":
-        message["call_text"] = None
-
-    if message["forward_to"] == "":
-        message["forward_to"] = None
-    else:
-        message["forward_to"] = intbrq(message["forward_to"])
-
-    parse = lambda s: datetime.datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
-
-    # this is for the template, to fill out the form
-    active_when_dict = {"lower": request.form["active_when_lower"],
-                        "upper": request.form["active_when_upper"]}
-
-    try:
-        lower = parse(request.form["active_when_lower"])
-        upper = parse(request.form["active_when_upper"])
-        if lower >= upper:
-            raise ValueError
-    except ValueError as e:
+    if message.get("active_when_invalid", False):
         flash('Invalid datetime range', 'error')
-        message["active_when"] = active_when_dict
         return render_template("message_edit.html",
                                humans=all_humans(), **message)
-
-    message["active_when"] = \
-            psycopg2.extras.DateTimeRange(lower, upper, bounds='[)')
 
     if (message["call_text"] == None) == (message["forward_to"] == None):
         flash('Specify exactly one of "Twilio call text" and '
@@ -784,6 +936,7 @@ def edit_message_save(message_id=None):
         if e.pgcode != psycopg2.errorcodes.RAISE_EXCEPTION:
             raise
 
+        logger.warning("Forbidden update", exc_info=True)
         flash('Update forbidden: {0}'.format(e.diag.message_primary), 'error')
 
         if message_id is not None:
@@ -803,16 +956,83 @@ def edit_message_save(message_id=None):
         elif action == "end_earlier":
             flash('Message "{0}" now ends earlier ({1}) since '
                   '{2} message starts then.'
-                  .format(name, lower, new_type),
+                  .format(name, message["active_when"].lower, new_type),
                   'warning')
         elif action == "start_later":
             flash('Message "{0}" now starts later ({1}) since '
                   '{2} message starts then.'
-                  .format(name, upper, new_type),
+                  .format(name, message["active_when"].upper, new_type),
                   'warning')
 
     flash("Message {0}".format(action_name), "success")
     return redirect(url_for("list_messages"))
+
+@app.route("/messages/wizard/start", methods=["POST"])
+def wizard_start():
+    try:
+        launch_date = parse_datetime(request.form["launch_date"])
+    except ValueError:
+        flash('Invalid datetime', 'error')
+        return redirect(url_for('list_messages'))
+
+    active_all, active_call_text, active_forward_to = \
+            wizard_ranges(launch_date)
+
+    error = wizard_checks(active_all)
+    if error:
+        flash(error, 'error')
+        return redirect(url_for('list_messages'))
+
+    message = wizard_default_text(launch_date)
+    message["id"] = None
+
+    return render_template("message_edit.html", wizard_mode=True,
+                           active_call_text=active_call_text,
+                           active_forward_to=active_forward_to,
+                           launch_date=launch_date,
+                           humans=all_humans(), **message)
+
+
+@app.route("/messages/wizard/save", methods=["POST"])
+def wizard_save():
+    try:
+        launch_date = parse_datetime(request.form["launch_date"])
+    except ValueError:
+        abort(400)
+
+    active_all, active_call_text, active_forward_to = \
+            wizard_ranges(launch_date)
+
+    error = wizard_checks(active_all)
+    if error:
+        flash(error, 'error')
+        return redirect(url_for('list_messages'))
+
+    message1 = parse_message_edit_form()
+    message1["id"] = None
+    message2 = message1.copy()
+
+    message1["forward_to"] = None
+    message1["active_when"] = active_call_text
+    message2["call_text"] = None
+    message2["active_when"] = active_forward_to
+
+    try:
+        insert_message(message1)
+        insert_message(message2)
+    except (psycopg2.IntegrityError, psycopg2.DataError):
+        connection().rollback()
+        logger.warning("PostgreSQL error", exc_info=True)
+        abort(400)
+    except psycopg2.InternalError as e:
+        connection().rollback()
+        if e.pgcode != psycopg2.errorcodes.RAISE_EXCEPTION:
+            raise
+        logger.warning("Forbidden update", exc_info=True)
+        abort(400)
+    else:
+        flash('Messages added successfully', 'success')
+        return redirect(url_for('list_messages'))
 
 @app.route("/message/<int:message>/delete", methods=["POST"])
 def delete_message(message):
@@ -825,6 +1045,7 @@ def delete_message(message):
         if e.pgcode != psycopg2.errorcodes.RAISE_EXCEPTION:
             raise
 
+        logger.warning("Forbidden delete", exc_info=True)
         flash('Delete forbidden: {0}'.format(e.diag.message_primary), 'error')
     else:
         flash("Message deleted", "success")

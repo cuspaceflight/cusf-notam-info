@@ -1,6 +1,9 @@
 {% extends "base.html" %}
+{% from "misc.html" import datetime_pattern %}
 
-{% if id == none %}
+{% if wizard_mode %}
+    {% set page_title = "Launch wizard" %}
+{% elif id == none %}
     {% set page_title = "New message" %}
 {% else %}
     {% set page_title = "Edit message" %}
@@ -11,55 +14,91 @@
     {% set active_when = {"lower": "", "upper": ""} %}
 {% endif %}
 
+{% if call_text == none %}
+    {# else Jinja prints 'none' #}
+    {% set call_text = "" %}
+{% endif %}
+
+{% if wizard_mode %}
+    {% set action = url_for("wizard_save") %}
+{% else %}
+    {% set action = url_for("edit_message_save", message_id=id) %}
+{% endif %}
+
+{% macro control_group(name, label, caller, class='') %}
+    <div class="control-group {{ class }}">
+        <label class="control-label" for="{{ name }}">{{ label }}</label>
+        <div class="controls">
+            {{ caller() }}
+        </div>
+    </div>
+{% endmacro %}
+
+{% macro input_text_elem(name, value, maxlength=none, extra="", required=true, class="input-large") %}
+    <input type="text" id="{{ name }}" name="{{ name }}" class="{{ class }}"
+           value="{{ value }}" {{ extra|safe }} maxlength="{{ maxlength }}" {{ "required" if required }}>
+{% endmacro %}
+
+{% macro input_text(name, label, value, maxlength=none, extra="", required=true, class="input-large", cg_class="") %}
+    {% call control_group(name, label, class=cg_class) %}
+        {{ input_text_elem(name, value, maxlength, extra, required, class) }}
+    {% endcall %}
+{% endmacro %}
+
 {% block content %}
     <div class="row">
         <div class="span12">
-            <form method="POST" action="{{ url_for(request.endpoint, message_id=id) }}" class="form-horizontal">
+            <form method="POST" action="{{ action }}" class="form-horizontal">
                 {{ csrf_token_input() }}
 
-                {% macro control_group(name, label, caller, class='') %}
-                    <div class="control-group {{ class }}">
-                        <label class="control-label" for="{{ name }}">{{ label }}</label>
-                        <div class="controls">
-                            {{ caller() }}
-                        </div>
-                    </div>
-                {% endmacro %}
+                {% if wizard_mode %}
+                    <input type="hidden" name="launch_date" value="{{ launch_date }}">
+                {% endif %}
 
-                {% macro input_text(name, label, value, maxlength, extra="", required=true, class="input-large", cg_class="") %}
-                    {% call control_group(name, label, class=cg_class) %}
-                        <input type="text" id="{{ name }}" name="{{ name }}" class="{{ class }}"
-                               value="{{ value }}" {{ extra|safe }} maxlength="{{ maxlength }}" {{ "required" if required }}>
+                {{ input_text("short_name", "Name", short_name, maxlength=40, class="input-large", cg_class="gap_after") }}
+
+                {% if not wizard_mode %}
+                    {{ input_text("active_when_lower", "Active from", active_when.lower, none, extra=datetime_pattern) }}
+                    {% call control_group("active_when_upper", "... until", class="gap_after") %}
+                        {{ input_text_elem("active_when_upper", active_when.upper, extra=datetime_pattern) }}
+                        <span class="help-block">Note that all datetimes are UTC</span>
                     {% endcall %}
-                {% endmacro %}
+                {% endif %}
 
-                {{ input_text("short_name", "Name", short_name, 40, class="input-large", cg_class="gap_after") }}
-
-                {% set datetime_pattern = 'placeholder="YYYY-MM-DD HH:MM:SS" required pattern="\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d"' %}
-                {{ input_text("active_when_lower", "Active from", active_when.lower, none, extra=datetime_pattern) }}
-                {% call control_group("active_when_upper", "... until", class="gap_after") %}
-                    <input type="text" id="active_when_upper" name="active_when_upper"
-                           value="{{ active_when.upper }}" {{ datetime_pattern|safe }} required>
-                    <span class="help-block">Note that all datetimes are UTC</span>
-                {% endcall %}
-
-                {{ input_text("web_short_text", "Widget text", web_short_text, 500, class="input-xlarge") }}
+                {{ input_text("web_short_text", "Widget text", web_short_text, maxlength=500, class="input-xlarge") }}
                 {% call control_group("web_long_text", "Launch page text", class="gap_after") %}
                     <textarea id="web_long_text" name="web_long_text" class="input-xxlarge" rows="4" maxlength="2000" required>
                         {{- web_long_text -}}
                     </textarea>
                 {% endcall %}
 
-                {{ input_text("call_text", "Twilio call text", call_text if call_text, 500, class="input-xlarge", required=false) }}
-                {% call control_group("forward_to", "... or immediately forward calls to", class="gap_after") %}
+                {% call control_group("call_text", "Twilio call text") %}
+                    {{ input_text_elem("call_text", call_text, maxlength=500, required=wizard_mode, class="input-xxlarge") }}
+
+                    {% if wizard_mode %}
+                        <span class="help-block">
+                            This will be active from {{ active_call_text.lower }} to {{ active_call_text.upper }} (UTC).
+                        </span>
+                    {% endif %}
+                {% endcall %}
+                {% set forward_to_label = "Contact on the day" if wizard_mode else "... or immediately forward calls to" %}
+                {% call control_group("forward_to", forward_to_label, class="gap_after") %}
                     <select name="forward_to" id="forward_to">
-                        <option value=""></option>
+                        {% if not wizard_mode %}
+                            <option value=""></option>
+                        {% endif %}
                         {% for human in humans %}
                             <option value="{{ human.id }}" {{ "selected" if human.id == forward_to }}>
                                 &ldquo;{{ human.name }}&rdquo; on {{ human.phone }}
                             </option>
                         {% endfor %}
                     </select>
+
+                    {% if wizard_mode %}
+                        <span class="help-block">
+                            Calls will be immediately forwarded here from {{ active_forward_to.lower }} to {{ active_forward_to.upper }} (UTC).
+                        </span>
+                    {% endif %}
                 {% endcall %}
 
                 <div class="control-group">

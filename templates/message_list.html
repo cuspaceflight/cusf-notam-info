@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "pagination.html" import pagination %}
+{% from "misc.html" import datetime_pattern %}
 
 {% set page_title = "Messages" %}
 
@@ -13,8 +14,20 @@
             {% endif %}
 
             <section id="header">
-                <span>Note that all times are UTC.</span>
-                <a href="{{ url_for("edit_message") }}" class="btn btn-primary pull-right" id="add_message">Add Message</a>
+                <div class="row">
+                    <div id="utc_note" class="span4 text-left">Note that all times are UTC.</div>
+                    <div class="span4 text-center">
+                        <form class="form-inline" method="POST" action="{{ url_for('wizard_start') }}">
+                            {{ csrf_token_input() }}
+                            <input type="text" id="launch_date" name="launch_date"
+                                   value="{{ default_launch_date }}" {{ datetime_pattern }}>
+                            <button class="btn btn-success">Launch wizard</button>
+                        </form>
+                    </div>
+                    <div class="span4 text-right">
+                        <a href="{{ url_for("edit_message") }}" class="btn btn-primary" id="add_message">Add Message</a>
+                    </div>
+                </div>
             </section>
 
             <section id="messages">
