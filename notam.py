@@ -706,8 +706,6 @@ def list_messages(page=None):
 @app.route("/messages/new", methods=["GET"])
 @app.route("/message/<int:message_id>/edit", methods=["GET"])
 def edit_message(message_id=None):
-    return_to = request.args.get("return_to", None)
-
     if message_id is None:
         # tomorrow 00:00:00
         message = {"id": None, "active_when": default_active_when()}
@@ -716,14 +714,12 @@ def edit_message(message_id=None):
         if message is None:
             abort(404)
 
-    return render_template("message_edit.html", return_to=return_to,
-                           humans=all_humans(), **message)
+    return render_template("message_edit.html", humans=all_humans(), **message)
 
 @app.route("/messages/new", methods=["POST"])
 @app.route("/message/<int:message_id>/edit", methods=["POST"])
 def edit_message_save(message_id=None):
     message = {"id": message_id}
-    return_to = request.args.get("return_to", None)
 
     if message_id is not None:
         new_type = "edited"
@@ -758,7 +754,7 @@ def edit_message_save(message_id=None):
     except ValueError as e:
         flash('Invalid datetime range', 'error')
         message["active_when"] = active_when_dict
-        return render_template("message_edit.html", return_to=return_to,
+        return render_template("message_edit.html",
                                humans=all_humans(), **message)
 
     message["active_when"] = \
@@ -767,7 +763,7 @@ def edit_message_save(message_id=None):
     if (message["call_text"] == None) == (message["forward_to"] == None):
         flash('Specify exactly one of "Twilio call text" and '
               '"immediately forward call to"', 'error')
-        return render_template("message_edit.html", return_to=return_to,
+        return render_template("message_edit.html",
                                humans=all_humans(), **message)
 
     try:
@@ -789,7 +785,7 @@ def edit_message_save(message_id=None):
             # reset the form:
             message = get_message(message_id)
 
-        return render_template("message_edit.html", return_to=return_to,
+        return render_template("message_edit.html",
                                humans=all_humans(), **message)
 
     for action, name in moved_messages:
@@ -809,12 +805,11 @@ def edit_message_save(message_id=None):
                   'warning')
 
     flash("Message {0}".format(action_name), "success")
-    return redirect(url_for("list_messages", return_to=return_to))
+    return redirect(url_for("list_messages"))
 
 @app.route("/message/<int:message>/delete", methods=["POST"])
 def delete_message(message):
     check_csrf_token() # since request.form would otherwise be empty
-    return_to = request.args.get("return_to", None)
 
     try:
         do_delete_message(message)
@@ -827,7 +822,7 @@ def delete_message(message):
     else:
         flash("Message deleted", "success")
 
-    return redirect(url_for('list_messages', page=return_to))
+    return redirect(url_for('list_messages'))
 
 @app.route("/heartbeat")
 def heartbeat():
