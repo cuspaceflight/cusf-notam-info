@@ -46,6 +46,9 @@ select#forward_to {
 #page_list_messages #header {
     margin-bottom: 20px;
 }
+#page_list_messages #header form {
+    margin: 0;
+}
 #page_list_messages #header #utc_note {
     margin-top: 4px;
     display: inline-block;
@@ -62,6 +65,12 @@ select#forward_to {
 @media (max-width: 767px) {
     #page_list_messages .message_buttons {
         width: 120px;
+    }
+    #page_list_messages #header #utc_note {
+        margin-top: 0;
+    }
+    #page_list_messages #header div.span4 {
+        text-align: center;
     }
 }
 @media (max-width: 480px) {
