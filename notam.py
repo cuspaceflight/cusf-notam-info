@@ -492,7 +492,7 @@ def check_twilio_request():
 @app.before_request
 def validate_request():
     """Check POST/form requests: CSRF, or Twilio RequestValidator"""
-    if request.form or request.method == "POST":
+    if request.endpoint and (request.form or request.method == "POST"):
         if request.endpoint.startswith("twilio_"):
             assert request.path.startswith("/twilio/")
             check_twilio_request()
