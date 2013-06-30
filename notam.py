@@ -1143,12 +1143,13 @@ def twilio_call_start():
             # We are not planning any launches in the next three days.
             r.play(url_for('static', filename='audio/none_three_days.wav'))
         else:
+            call_text = message["call_text"]
             call_log("Introducing robot and saying {0!r}".format(call_text))
             # You will shortly hear an automated message detailing the
             # approximate time of an upcoming launch that we are planning.
             r.play(url_for('static', filename='audio/robot_intro.wav'))
             r.pause(length=1)
-            r.say(message["call_text"])
+            r.say(call_text)
 
         r.pause(length=1)
         twilio_options(r)
