@@ -1,5 +1,6 @@
 import flask
 from twilio import twiml
+import twilio.util
 import logging
 import smtplib
 import time
@@ -29,6 +30,17 @@ def setup_postgres_pool():
 
     global postgres_pool
     postgres_pool = ThreadedConnectionPool(1, 10, app.config["POSTGRES"])
+
+twilio_validator = None
+
+@app.before_first_request
+def setup_twilio_validator():
+    """Creates the Twilio RequestValidator"""
+
+    # as for setup_postgres_pool
+    global twilio_validator
+    twilio_validator = \
+            twilio.util.RequestValidator(app.config["TWILIO_AUTH_TOKEN"])
 
 def connection():
     """
@@ -470,11 +482,23 @@ def check_csrf_token():
         logger.warning("CSRF Token incorrect")
         abort(400)
 
+def check_twilio_request():
+    """Checks that a request actually came from Twilio"""
+    if not twilio_validator.validate(request.url, request.form,
+                                     request.headers["X-Twilio-Signature"]):
+        logger.warning("Twilio signature incorrect")
+        abort(400)
+
 @app.before_request
-def auto_check_csrf():
-    """Automatically check the CSRF token whenever data is POSTed"""
-    if request.form:
-        check_csrf_token()
+def validate_request():
+    """Check POST/form requests: CSRF, or Twilio RequestValidator"""
+    if request.form or request.method == "POST":
+        if request.endpoint.startswith("twilio_"):
+            assert request.path.startswith("/twilio/")
+            check_twilio_request()
+        else:
+            assert request.path.startswith("/admin/")
+            check_csrf_token()
 
 @app.template_global('show_which_pages')
 def show_which_pages(page, pages, show=5):
@@ -715,11 +739,15 @@ def wizard_default_text(launch_date):
 ## Views
 
 @app.route("/")
+def redirect_admin():
+    return redirect(url_for("home"))
+
+@app.route("/admin/")
 def home():
     return render_template("home.html", message=active_message())
 
-@app.route("/log")
-@app.route("/log/<int:page>")
+@app.route("/admin/log")
+@app.route("/admin/log/<int:page>")
 def log_viewer(page=None):
     page_size = 100
     count = calls_count()
@@ -746,7 +774,7 @@ def log_viewer(page=None):
     return render_template("log_viewer.html",
                 calls=calls, pages=pages, page=page)
 
-@app.route("/log/call/<int:call>")
+@app.route("/admin/log/call/<int:call>")
 def log_viewer_call(call):
     try:
         sid = get_call_sid(call)
@@ -760,7 +788,7 @@ def log_viewer_call(call):
     return render_template("log_viewer_call.html", call=call, sid=sid, log=log,
                            return_to=request.args.get("return_to", None))
 
-@app.route("/humans", methods=["GET", "POST"])
+@app.route("/admin/humans", methods=["GET", "POST"])
 def edit_humans():
     # if the update succeeds, redirect so that the method becomes GET and
     # the refresh button works as espected.
@@ -839,8 +867,8 @@ def edit_humans():
             humans=humans,
             lowest_priorities=lowest_priorities)
 
-@app.route("/messages")
-@app.route("/messages/<int:page>")
+@app.route("/admin/messages")
+@app.route("/admin/messages/<int:page>")
 def list_messages(page=None):
     page_size = 5
     count = messages_count()
@@ -886,8 +914,8 @@ def list_messages(page=None):
     return render_template("message_list.html", messages=messages,
             page=page, pages=pages, default_launch_date=default_launch_date())
 
-@app.route("/messages/new", methods=["GET"])
-@app.route("/message/<int:message_id>/edit", methods=["GET"])
+@app.route("/admin/messages/new", methods=["GET"])
+@app.route("/admin/message/<int:message_id>/edit", methods=["GET"])
 def edit_message(message_id=None):
     if message_id is None:
         # tomorrow 00:00:00
@@ -899,8 +927,8 @@ def edit_message(message_id=None):
 
     return render_template("message_edit.html", humans=all_humans(), **message)
 
-@app.route("/messages/new", methods=["POST"])
-@app.route("/message/<int:message_id>/edit", methods=["POST"])
+@app.route("/admin/messages/new", methods=["POST"])
+@app.route("/admin/message/<int:message_id>/edit", methods=["POST"])
 def edit_message_save(message_id=None):
     if message_id is not None:
         new_type = "edited"
@@ -967,7 +995,7 @@ def edit_message_save(message_id=None):
     flash("Message {0}".format(action_name), "success")
     return redirect(url_for("list_messages"))
 
-@app.route("/messages/wizard/start", methods=["POST"])
+@app.route("/admin/messages/wizard/start", methods=["POST"])
 def wizard_start():
     try:
         launch_date = parse_datetime(request.form["launch_date"])
@@ -993,7 +1021,7 @@ def wizard_start():
                            humans=all_humans(), **message)
 
 
-@app.route("/messages/wizard/save", methods=["POST"])
+@app.route("/admin/messages/wizard/save", methods=["POST"])
 def wizard_save():
     try:
         launch_date = parse_datetime(request.form["launch_date"])
@@ -1034,7 +1062,7 @@ def wizard_save():
         flash('Messages added successfully', 'success')
         return redirect(url_for('list_messages'))
 
-@app.route("/message/<int:message>/delete", methods=["POST"])
+@app.route("/admin/message/<int:message>/delete", methods=["POST"])
 def delete_message(message):
     check_csrf_token() # since request.form would otherwise be empty
 
@@ -1051,6 +1079,9 @@ def delete_message(message):
         flash("Message deleted", "success")
 
     return redirect(url_for('list_messages'))
+
+
+## Views for other programs
 
 @app.route("/heartbeat")
 def heartbeat():
@@ -1069,8 +1100,11 @@ def web_status():
         return jsonify(short=message["web_short_text"],
                        long=message["web_long_text"])
 
-@app.route('/sms', methods=["POST"])
-def sms():
+
+## Twilio URLS
+
+@app.route('/twilio/sms', methods=["POST"])
+def twilio_sms():
     sms_from = request.form["From"]
     sms_msg = request.form["Body"]
     logger.info("SMS From %s: %r", sms_from, sms_msg)
@@ -1078,8 +1112,8 @@ def sms():
     r = twiml.Response()
     return str(r)
 
-@app.route('/call/start', methods=["POST"])
-def call_start():
+@app.route('/twilio/call/start', methods=["POST"])
+def twilio_call_start():
     call_log("Call started; from {0}".format(request.form["From"]))
 
     message = active_message()
@@ -1117,11 +1151,11 @@ def call_start():
             r.say(message["call_text"])
 
         r.pause(length=1)
-        options(r)
+        twilio_options(r)
 
     return str(r)
 
-def options(r):
+def twilio_options(r):
     g = r.gather(action=url_for("call_gathered"), timeout=30, numDigits=1)
     # Hopefully this automated message has answered your question, but if not,
     # please press 2 to be forwarded to a human. Otherwise, either hang up or
@@ -1129,8 +1163,8 @@ def options(r):
     g.play(url_for('static', filename='audio/options.wav'))
     r.redirect(url_for('call_gather_failed'))
 
-@app.route('/call/gathered', methods=["POST"])
-def call_gathered():
+@app.route('/twilio/call/gathered', methods=["POST"])
+def twilio_call_gathered():
     d = request.form["Digits"]
     r = twiml.Response()
 
@@ -1146,22 +1180,22 @@ def call_gathered():
         r.play(url_for('static', filename='audio/forwarding.wav'))
         r.pause(length=1)
         # call_human(seed, 0)
-        dial(r, seed, 0)
+        twilio_dial(r, seed, 0)
 
     else:
         call_log("Invalid keypress {0}; offering options".format(d))
-        options(r)
+        twilio_options(r)
 
     return str(r)
 
-@app.route('/call/gather_failed', methods=["POST"])
-def call_gather_failed():
+@app.route('/twilio/call/gather_failed', methods=["POST"])
+def twilio_call_gather_failed():
     call_log("Gather failed - no keys pressed; hanging up")
     r = twiml.Response()
     r.hangup()
     return str(r)
 
-def dial(r, seed, index):
+def twilio_dial(r, seed, index):
     priority, name, phone = shuffled_humans(seed)[index]
 
     call_log("Attempt {0}: {1!r} on {2}".format(index, name, phone))
@@ -1174,22 +1208,23 @@ def dial(r, seed, index):
                callerId=request.form["To"])
     d.number(phone, url=pickup_url)
 
-@app.route('/call/human/<int:seed>/<int:index>', methods=["POST"])
-def call_human(seed, index):
+@app.route('/twilio/call/human/<int:seed>/<int:index>', methods=["POST"])
+def twilio_call_human(seed, index):
     r = twiml.Response()
-    dial(r, seed, index)
+    twilio_dial(r, seed, index)
     return str(r)
 
-@app.route("/call/human/<int:seed>/<int:index>/pickup", methods=["POST"])
-def call_human_pickup(seed, index):
+@app.route("/twilio/call/human/<int:seed>/<int:index>/pickup",
+           methods=["POST"])
+def twilio_call_human_pickup(seed, index):
     # This URL is hit before the called party is connected to the call
     # Just use it for logging
     call_log("Human (attempt {0}) picked up".format(index))
     r = twiml.Response()
     return str(r)
 
-@app.route("/call/human/<int:seed>/<int:index>/end", methods=["POST"])
-def call_human_ended(seed, index):
+@app.route("/twilio/call/human/<int:seed>/<int:index>/end", methods=["POST"])
+def twilio_call_human_ended(seed, index):
     # This URL is hit when the Dial verb finishes
 
     status = request.form["DialCallStatus"]
@@ -1205,7 +1240,7 @@ def call_human_ended(seed, index):
                     .format(index, status))
 
         try:
-            dial(r, seed, index + 1)
+            twilio_dial(r, seed, index + 1)
         except IndexError:
             call_log("Humans exhausted: apologising and hanging up")
             # Unfortunately we failed to contact any members.
@@ -1216,14 +1251,14 @@ def call_human_ended(seed, index):
 
     return str(r)
 
-@app.route("/call/forward/pickup", methods=["POST"])
-def call_forward_pickup():
+@app.route("/twilio/call/forward/pickup", methods=["POST"])
+def twilio_call_forward_pickup():
     call_log("Forwarded call picked up")
     r = twiml.Response()
     return str(r)
 
-@app.route("/call/forward/ended", methods=["POST"])
-def call_forward_ended():
+@app.route("/twilio/call/forward/ended", methods=["POST"])
+def twilio_call_forward_ended():
     status = request.form["DialCallStatus"]
     if status == "completed":
         call_log("Forwarded call completed successfully. Hanging up.")
@@ -1234,8 +1269,8 @@ def call_forward_ended():
     r.hangup()
     return str(r)
 
-@app.route("/call/status_callback", methods=["POST"])
-def call_ended():
+@app.route("/twilio/call/status_callback", methods=["POST"])
+def twilio_call_ended():
     number = request.form["From"]
     duration = request.form["CallDuration"]
     status = request.form["CallStatus"]
