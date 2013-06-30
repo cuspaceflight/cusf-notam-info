@@ -1126,10 +1126,11 @@ def twilio_call_start():
         call_log("Forwarding call straight to {0!r} on {1}"
             .format(name, phone))
 
-        pickup_url = url_for("call_forward_pickup", parent_sid=get_sid())
-        d = r.dial(action=url_for("call_forward_ended"),
+        pickup_url = url_for("twilio_call_forward_pickup",
+                             parent_sid=get_sid())
+        d = r.dial(action=url_for("twilio_call_forward_ended"),
                    callerId=request.form["To"])
-        d.number(phone, url=url_for("call_forward_pickup"))
+        d.number(phone, url=url_for("twilio_call_forward_pickup"))
 
     else:
         # This is the information phone number for the Cambridge University
@@ -1157,12 +1158,13 @@ def twilio_call_start():
     return str(r)
 
 def twilio_options(r):
-    g = r.gather(action=url_for("call_gathered"), timeout=30, numDigits=1)
+    g = r.gather(action=url_for("twilio_call_gathered"),
+                 timeout=30, numDigits=1)
     # Hopefully this automated message has answered your question, but if not,
     # please press 2 to be forwarded to a human. Otherwise, either hang up or
     # press 1 to end the call.
     g.play(url_for('static', filename='audio/options.wav'))
-    r.redirect(url_for('call_gather_failed'))
+    r.redirect(url_for('twilio_call_gather_failed'))
 
 @app.route('/twilio/call/gathered', methods=["POST"])
 def twilio_call_gathered():
@@ -1203,9 +1205,10 @@ def twilio_dial(r, seed, index):
 
     # Make callerId be our Twilio number so people know why they're being
     # called at 7am before they pick up
-    pickup_url = url_for("call_human_pickup", seed=seed, index=index,
+    pickup_url = url_for("twilio_call_human_pickup", seed=seed, index=index,
                          parent_sid=get_sid())
-    d = r.dial(action=url_for("call_human_ended", seed=seed, index=index),
+    d = r.dial(action=url_for("twilio_call_human_ended",
+                              seed=seed, index=index),
                callerId=request.form["To"])
     d.number(phone, url=pickup_url)
 
