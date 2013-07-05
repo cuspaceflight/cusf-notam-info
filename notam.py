@@ -12,7 +12,7 @@ from psycopg2.extras import DateTimeRange, RealDictCursor
 import psycopg2.errorcodes
 
 from flask import request, url_for, redirect, render_template, \
-                  Markup, jsonify, abort, flash, session
+                  Markup, jsonify, abort, flash, session, g
 
 app = flask.Flask(__name__)
 
@@ -54,10 +54,9 @@ def connection():
     """
 
     assert flask.has_request_context()
-    top = flask._app_ctx_stack.top
-    if not hasattr(top, '_database'):
-        top._database = postgres_pool.getconn()
-    return top._database
+    if not hasattr(g, '_database'):
+        g._database = postgres_pool.getconn()
+    return g._database
 
 def cursor(real_dict_cursor=False):
     """
@@ -81,10 +80,9 @@ def cursor(real_dict_cursor=False):
 def close_db_connection(exception):
     """Commit and close the per-request postgres connection"""
 
-    top = flask._app_ctx_stack.top
-    if hasattr(top, '_database'):
-        top._database.commit()
-        postgres_pool.putconn(top._database)
+    if hasattr(g, '_database'):
+        g._database.commit()
+        postgres_pool.putconn(g._database)
 
 
 ## Logging and call_log
