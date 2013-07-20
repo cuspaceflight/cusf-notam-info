@@ -7,9 +7,9 @@ import time
 import re
 import random
 import datetime
-from psycopg2.pool import ThreadedConnectionPool
-from psycopg2.extras import DateTimeRange, RealDictCursor
+import psycopg2
 import psycopg2.errorcodes
+from psycopg2.extras import DateTimeRange, RealDictCursor
 
 from flask import request, url_for, redirect, render_template, \
                   Markup, jsonify, abort, flash, session, g
@@ -17,19 +17,7 @@ from flask import request, url_for, redirect, render_template, \
 app = flask.Flask(__name__)
 
 
-## PostgreSQL
-
-postgres_pool = None
-
-@app.before_first_request
-def setup_postgres_pool():
-    """Initialise the postgres connection pool"""
-
-    # Happens "before_first_request" rather than at module init since
-    # app.config could change
-
-    global postgres_pool
-    postgres_pool = ThreadedConnectionPool(1, 10, app.config["POSTGRES"])
+## Setup
 
 twilio_validator = None
 
@@ -41,6 +29,9 @@ def setup_twilio_validator():
     global twilio_validator
     twilio_validator = \
             twilio.util.RequestValidator(app.config["TWILIO_AUTH_TOKEN"])
+
+
+## PostgreSQL
 
 def connection():
     """
@@ -55,7 +46,7 @@ def connection():
 
     assert flask.has_request_context()
     if not hasattr(g, '_database'):
-        g._database = postgres_pool.getconn()
+        g._database = psycopg2.connect(app.config["POSTGRES"])
     return g._database
 
 def cursor(real_dict_cursor=False):
@@ -81,8 +72,10 @@ def close_db_connection(exception):
     """Commit and close the per-request postgres connection"""
 
     if hasattr(g, '_database'):
-        g._database.commit()
-        postgres_pool.putconn(g._database)
+        try:
+            g._database.commit()
+        finally:
+            g._database.close()
 
 
 ## Logging and call_log
