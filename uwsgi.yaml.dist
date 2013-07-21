@@ -1,0 +1,5 @@
+uwsgi:
+    socket: /run/www-sockets/cusf-notam-info.sock
+    virtualenv: /opt/cusf-notam-info/venv
+    chdir: /opt/cusf-notam-info
+    wsgi-file: notam.wsgi

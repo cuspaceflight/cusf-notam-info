@@ -1079,7 +1079,7 @@ def heartbeat():
     with cursor() as cur:
         cur.execute("SELECT TRUE")
         assert cur.fetchone()
-    return "FastCGI is alive and PostgreSQL is OK"
+    return "uWSGI is alive and PostgreSQL is OK"
 
 @app.route('/web.json')
 def web_status():

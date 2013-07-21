@@ -1,5 +1,6 @@
 *.pyc
 *.swp
-notam.fcgi
+notam.wsgi
 notam.debug
+uwsgi.yaml
 venv

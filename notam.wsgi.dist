@@ -1,9 +1,6 @@
-#!/opt/cusf-notam-info/venv/bin/python
-
 import logging
 import flask
 from logging.handlers import SysLogHandler, SMTPHandler
-from flup.server.fcgi import WSGIServer
 from notam import app
 
 app.secret_key = ""
@@ -72,5 +69,4 @@ root_logger.setLevel(logging.DEBUG)
 root_logger.addHandler(syslog_handler)
 root_logger.addHandler(mail_handler)
 
-if __name__ == "__main__":
-    WSGIServer(app).run()
+application = app
