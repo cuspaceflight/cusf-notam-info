@@ -2,3 +2,4 @@ Flask
 twilio
 psycopg2
 uWSGI
+python-raven

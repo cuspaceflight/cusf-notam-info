@@ -7,6 +7,7 @@ import time
 import re
 import random
 import datetime
+import raven.flask_glue
 import psycopg2
 import psycopg2.errorcodes
 from psycopg2.extras import DateTimeRange, RealDictCursor
@@ -20,15 +21,19 @@ app = flask.Flask(__name__)
 ## Setup
 
 twilio_validator = None
+raven_decorator = None
 
 @app.before_first_request
-def setup_twilio_validator():
-    """Creates the Twilio RequestValidator"""
+def setup_configured_globals():
+    """Creates the Twilio RequestValidator and the raven AuthDecorator"""
 
-    # as for setup_postgres_pool
-    global twilio_validator
+    global twilio_validator, raven_decorator
+
     twilio_validator = \
             twilio.util.RequestValidator(app.config["TWILIO_AUTH_TOKEN"])
+    raven_decorator = \
+            raven.flask_glue.AuthDecorator(
+                    require_principal=app.config["ADMIN_CRSIDS"])
 
 
 ## PostgreSQL
@@ -483,6 +488,11 @@ def check_twilio_request():
 @app.before_request
 def validate_request():
     """Check POST/form requests: CSRF, or Twilio RequestValidator"""
+    if request.path.startswith("/admin/"):
+        r = raven_decorator.before_request()
+        if r is not None:
+            return r
+
     if request.endpoint and (request.form or request.method == "POST"):
         if request.endpoint.startswith("twilio_"):
             assert request.path.startswith("/twilio/")
