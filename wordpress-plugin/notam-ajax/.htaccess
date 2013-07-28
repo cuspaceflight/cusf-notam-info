@@ -1,0 +1,2 @@
+RewriteEngine on
+RewriteRule ^web.json$ http://www.danielrichman.co.uk/cusf-notam-info/web.json [P]

@@ -1,0 +1,9 @@
+.launch {
+    border: 5px solid orange;
+    padding: 1em;
+    font-weight: bold;
+    width: 100%;
+    font-size: 1.2em;
+    text-align: center;
+    background: #333;
+}
