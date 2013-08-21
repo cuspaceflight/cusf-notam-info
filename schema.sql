@@ -118,7 +118,7 @@ CREATE FUNCTION messages_past_update()
             ELSE
                 -- else the message is in the future, so forbid it from being
                 -- moved into the past
-                IF NEW.active_when <@ TSRANGE(NULL, LOCALTIMESTAMP) THEN
+                IF NEW.active_when && TSRANGE(NULL, LOCALTIMESTAMP) THEN
                     RAISE 'Cannot move a message into the past.';
                 END IF;
             END IF;
